@@ -60,6 +60,15 @@ class Linear(nn.Module):
   
   def forward(self, x: Float[Tensor, " ... in_features"]) -> torch.Tensor:
     return einsum(self.w, x, "out_features in_features, ... in_features -> ... out_features")
+  
+  def set_weights(self, weight: Float[Tensor, " out_features in_features"]):
+    """Set the weights of the layer.
+    
+    Args:
+      weight: Weights for the linear layer.
+    """
+    assert weight.shape == self.w.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.w.data.shape)
+    self.w.data = weight
 
 
 class Embedding(nn.Module):
@@ -94,6 +103,15 @@ class Embedding(nn.Module):
 
   def forward(self, token_ids: torch.LongTensor) -> torch.Tensor:
     return self.embeddings[token_ids]
+  
+  def set_weights(self, weight: Float[Tensor, " num_embeddings embedding_dim"]):
+    """Set the weights of the layer.
+    
+    Args:
+      weight: Weights for the embedding layer.
+    """
+    assert weight.shape == self.embeddings.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.embeddings.data.shape)
+    self.embeddings.data = weight
 
 
 class RMSNorm(nn.Module):
@@ -125,6 +143,15 @@ class RMSNorm(nn.Module):
     )
     x_fp32 = x_fp32 * self.scale * rrms
     return x_fp32.type_as(x)
+  
+  def set_weights(self, weight: Float[Tensor, " d_model"]):
+    """Set the weights of the layer.
+    
+    Args:
+      weight: Weights for the RMSNorm layer.
+    """
+    assert weight.shape == self.scale.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.scale.data.shape)
+    self.scale.data = weight
 
 
 def silu(in_features: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
@@ -166,8 +193,24 @@ class SwiGLU(nn.Module):
     self.w3 = Linear(d_model, d_ff, device, dtype)
   
   def forward(self, x: Float[Tensor, " ... d_model"]) -> torch.Tensor:
-    x1 = self.w1(x)
-    return self.w2(silu(x1) * self.w3(x))
+    return self.w2(silu(self.w1(x)) * self.w3(x))
+  
+  def set_weights(
+    self,
+    w1: Float[Tensor, " d_ff d_model"],
+    w2: Float[Tensor, " d_model d_ff"],
+    w3: Float[Tensor, " d_ff d_model"],
+  ):
+    """Set the weights of the layer.
+    
+    Args:
+      w1: Weights for the first linear layer.
+      w2: Weights for the second linear layer.
+      w3: Weights for the third linear layer.
+    """
+    self.w1.set_weights(w1)
+    self.w2.set_weights(w2)
+    self.w3.set_weights(w3)
 
 
 class RotaryPositionalEmbedding(nn.Module):
@@ -438,4 +481,92 @@ class MultiHeadSelfAttention(nn.Module):
 
     assert o_proj_weight.shape == self.w_o.w.data.shape, "unexpected shape for o_proj_weight: got {}, expected {}".format(o_proj_weight.shape, self.w_o.w.data.shape)
     self.w_o.w.data = o_proj_weight
+  
+
+class TransformerBlock(nn.Module):
+  """Transformer block with multi-head self-attention and SwiGLU feed-forward.
+  """
+  def __init__(
+    self,
+    d_model: int,
+    num_heads: int,
+    d_ff: int,
+    rope_max_seq_len: int | None = None,
+    rope_theta: float | None = None,
+    rms_norm_eps: float = 1e-5,
+    device: torch.device | None = None,
+    dtype: torch.dtype | None = None,
+  ):
+    """
+    Args:
+      d_model: Hidden dimension of the model and of the input of the Transformer
+        block.
+      num_heads: Number of attention heads.
+      d_ff: int Dimensionality of the position-wise feed-forward inner layer.
+      is_causal: Whether to apply a causal mask to prevent attention to future
+        tokens.
+      rope_max_seq_len: If not None, use RoPE with the given maximum sequence
+        length.
+      rope_theta: If not None, use RoPE with the given base value to compute
+        the rotation angles.
+      rms_norm_eps: Epsilon value for numerical stability in RMSNorm.
+      device: Device to store the parameters on.
+      dtype: Data type of the parameters.
+    """
+    super().__init__()
+    self.rms1 = RMSNorm(d_model, rms_norm_eps, device, dtype)
+    self.mha = MultiHeadSelfAttention(
+      d_model,
+      num_heads,
+      True,
+      rope_max_seq_len,
+      rope_theta,
+      device,
+      dtype,
+    )
+    self.rms2 = RMSNorm(d_model, rms_norm_eps, device, dtype)
+    self.ff = SwiGLU(d_model, d_ff, device, dtype)
+  
+  def forward(
+    self,
+    x: Float[Tensor, "... seq_len d_model"],
+    token_positions: Int[Tensor, "... seq_len"] | None = None,
+  ) -> Float[Tensor, "... seq_len d_model"]:
+    x = x + self.mha(self.rms1(x), token_positions)
+    x = x + self.ff(self.rms2(x))
+    return x
+
+  def set_weights(
+    self,
+    rms1_scale: Float[Tensor, " d_model"],
+    attn_q_proj_weight: Float[Tensor, " d_k_tot d_in"],
+    attn_k_proj_weight: Float[Tensor, " d_k_tot d_in"],
+    attn_v_proj_weight: Float[Tensor, " d_v_tot d_in"],
+    attn_o_proj_weight: Float[Tensor, " d_model d_v_tot"],
+    rms2_scale: Float[Tensor, " d_model"],
+    ffn_w1: Float[Tensor, " d_ff d_model"],
+    ffn_w2: Float[Tensor, " d_model d_ff"],
+    ffn_w3: Float[Tensor, " d_ff d_model"],
+  ):
+    """Set the weights of the layer.
     
+    Args:
+      rms1_scale: Weights for the first RMSNorm layer.
+      attn_q_proj_weight: Weights for the query projection.
+      attn_k_proj_weight: Weights for the key projection.
+      attn_v_proj_weight: Weights for the value projection.
+      attn_o_proj_weight: Weights for the output projection.
+      rms2_scale: Weights for the second RMSNorm layer.
+      ffn_w1: Weights for the first linear layer.
+      ffn_w2: Weights for the second linear layer.
+      ffn_w3: Weights for the third linear layer.
+    """
+    self.rms1.set_weights(rms1_scale)
+    self.mha.set_weights(
+        attn_q_proj_weight,
+        attn_k_proj_weight,
+        attn_v_proj_weight,
+        attn_o_proj_weight,
+    )
+    self.rms2.set_weights(rms2_scale)
+    self.ff.set_weights(ffn_w1, ffn_w2, ffn_w3)

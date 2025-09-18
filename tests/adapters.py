@@ -17,6 +17,7 @@ from cs336_basics.layers import (
     SwiGLU,
     RotaryPositionalEmbedding,
     MultiHeadSelfAttention,
+    TransformerBlock,
     silu,
     softmax,
     scaled_dot_product_attention,
@@ -43,7 +44,7 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
     linear = Linear(d_in, d_out)
-    linear.w.data = weights
+    linear.set_weights(weights)
     return linear(in_features)
 
 
@@ -66,7 +67,7 @@ def run_embedding(
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
     embedding = Embedding(vocab_size, d_model)
-    embedding.embeddings.data = weights
+    embedding.set_weights(weights)
     return embedding(token_ids)
 
 
@@ -93,9 +94,7 @@ def run_swiglu(
         Float[Tensor, "... d_model"]: Output embeddings of the same shape as the input embeddings.
     """
     swiglu = SwiGLU(d_model, d_ff)
-    swiglu.w1.w.data = w1_weight
-    swiglu.w2.w.data = w2_weight
-    swiglu.w3.w.data = w3_weight
+    swiglu.set_weights(w1_weight, w2_weight, w3_weight)
     return swiglu(in_features)
 
 
@@ -297,7 +296,27 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+
+    tb = TransformerBlock(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_max_seq_len=max_seq_len,
+        rope_theta=theta,
+    )
+    tb.set_weights(
+        rms1_scale=weights["ln1.weight"],
+        attn_q_proj_weight=weights["attn.q_proj.weight"],
+        attn_k_proj_weight=weights["attn.k_proj.weight"],
+        attn_v_proj_weight=weights["attn.v_proj.weight"],
+        attn_o_proj_weight=weights["attn.output_proj.weight"],
+        rms2_scale=weights["ln2.weight"],
+        ffn_w1=weights["ffn.w1.weight"],
+        ffn_w2=weights["ffn.w2.weight"],
+        ffn_w3=weights["ffn.w3.weight"],
+
+    )
+    return tb(in_features)
 
 
 def run_transformer_lm(
@@ -403,7 +422,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     norm = RMSNorm(d_model, eps)
-    norm.scale.data = weights
+    norm.set_weights(weights)
     return norm(in_features)
 
 

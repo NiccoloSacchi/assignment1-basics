@@ -69,7 +69,7 @@ class BPETokenizer:
         self,
         texts: Iterable[str],
         vocab_size: int,
-        special_tokens: tuple[str, ...] = ("<|endoftext|>",),
+        special_tokens: tuple[str, ...] | list[str] = ("<|endoftext|>",),
         verbose: bool = False,
     ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
         """Train a BPE tokenizer on a iterable to save memory.

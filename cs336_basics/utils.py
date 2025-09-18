@@ -1,6 +1,7 @@
 """Utility functions."""
 
 import json
+import os
 import re
 from typing import Iterator, Protocol
 import tqdm
@@ -49,7 +50,7 @@ def concatenate_documents(data: list[str], special_token="<|endoftext|>"):
   return special_token.join(data)
 
 def read_file_to_str_iterable(
-  path: str,
+  path: str | os.PathLike,
   special_tokens=["<|endoftext|>"],
   buffer_size_bytes: int=10_000_000,
 ) -> Iterator[str]:
