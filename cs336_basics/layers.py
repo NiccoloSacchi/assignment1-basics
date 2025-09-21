@@ -1,7 +1,6 @@
 import math
 import torch
-from torch import nn
-from torch import Tensor
+from torch import nn, Tensor
 from jaxtyping import Float, Int, Bool
 from einops import einsum, reduce, rearrange
 
@@ -58,17 +57,11 @@ class Linear(nn.Module):
         )
     )
   
-  def forward(self, x: Float[Tensor, " ... in_features"]) -> torch.Tensor:
-    return einsum(self.w, x, "out_features in_features, ... in_features -> ... out_features")
-  
-  def set_weights(self, weight: Float[Tensor, " out_features in_features"]):
-    """Set the weights of the layer.
-    
-    Args:
-      weight: Weights for the linear layer.
-    """
-    assert weight.shape == self.w.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.w.data.shape)
-    self.w.data = weight
+  def forward(
+    self,
+    x: Float[Tensor, " ... in_features"]
+  ) -> Float[Tensor, " ... out_features"]:
+    return einsum(self.w, x, "out_features in_features, ... in_features -> ... out_features")    
 
 
 class Embedding(nn.Module):
@@ -103,15 +96,6 @@ class Embedding(nn.Module):
 
   def forward(self, token_ids: torch.LongTensor) -> torch.Tensor:
     return self.embeddings[token_ids]
-  
-  def set_weights(self, weight: Float[Tensor, " num_embeddings embedding_dim"]):
-    """Set the weights of the layer.
-    
-    Args:
-      weight: Weights for the embedding layer.
-    """
-    assert weight.shape == self.embeddings.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.embeddings.data.shape)
-    self.embeddings.data = weight
 
 
 class RMSNorm(nn.Module):
@@ -142,16 +126,7 @@ class RMSNorm(nn.Module):
       reduce(x_fp32.pow(2), " ... d_model -> ... 1", "mean") + self.eps
     )
     x_fp32 = x_fp32 * self.scale * rrms
-    return x_fp32.type_as(x)
-  
-  def set_weights(self, weight: Float[Tensor, " d_model"]):
-    """Set the weights of the layer.
-    
-    Args:
-      weight: Weights for the RMSNorm layer.
-    """
-    assert weight.shape == self.scale.data.shape, "unexpected shape for weight: got {}, expected {}".format(weight.shape, self.scale.data.shape)
-    self.scale.data = weight
+    return x_fp32.type_as(x)    
 
 
 def silu(in_features: Float[Tensor, "..."]) -> Float[Tensor, "..."]:
@@ -194,23 +169,6 @@ class SwiGLU(nn.Module):
   
   def forward(self, x: Float[Tensor, " ... d_model"]) -> torch.Tensor:
     return self.w2(silu(self.w1(x)) * self.w3(x))
-  
-  def set_weights(
-    self,
-    w1: Float[Tensor, " d_ff d_model"],
-    w2: Float[Tensor, " d_model d_ff"],
-    w3: Float[Tensor, " d_ff d_model"],
-  ):
-    """Set the weights of the layer.
-    
-    Args:
-      w1: Weights for the first linear layer.
-      w2: Weights for the second linear layer.
-      w3: Weights for the third linear layer.
-    """
-    self.w1.set_weights(w1)
-    self.w2.set_weights(w2)
-    self.w3.set_weights(w3)
 
 
 class RotaryPositionalEmbedding(nn.Module):
@@ -403,14 +361,14 @@ class MultiHeadSelfAttention(nn.Module):
     # dimensions and can be stored in the same tensor. Also, for memory ordering
     # reasons, the last two dimensions should represent the (out_features,
     # in_features).
-    self.q_k_v = nn.Parameter(xavier_initialized_tensor(
+    self.q_k_v_proj = nn.Parameter(xavier_initialized_tensor(
       [3, num_heads, d_k, d_model],
       d_model,
       d_k,
       device,
       dtype,
     ))
-    self.w_o = Linear(num_heads * d_k, d_model, device, dtype)
+    self.o_proj = Linear(num_heads * d_k, d_model, device, dtype)
   
   def forward(
     self,
@@ -421,7 +379,7 @@ class MultiHeadSelfAttention(nn.Module):
     # Multiply the input by all the 3 matrices.
     q_k_v = einsum(
       x,
-      self.q_k_v,
+      self.q_k_v_proj,
       "... seq_len d_model, three num_head d_k d_model -> ... num_head seq_len d_k three",
     )
     # Extract the matrices to multiply q by k.
@@ -443,44 +401,7 @@ class MultiHeadSelfAttention(nn.Module):
       )
     att = scaled_dot_product_attention(q, k, v, mask)
     att = rearrange(att, "... num_head seq_len d_k -> ... seq_len (num_head d_k)")
-    return self.w_o(att)
-  
-  def set_weights(
-    self,
-    q_proj_weight: Float[Tensor, " d_k_tot d_in"],
-    k_proj_weight: Float[Tensor, " d_k_tot d_in"],
-    v_proj_weight: Float[Tensor, " d_v_tot d_in"],
-    o_proj_weight: Float[Tensor, " d_model d_v_tot"],
-  ):
-    """Set the weights of the layer.
-    
-    Args:
-      q_proj_weight: Weights for the query projection.
-      k_proj_weight: Weights for the key projection.
-      v_proj_weight: Weights for the value projection.
-      o_proj_weight: Weights for the output projection.
-    """
-    d_in = q_proj_weight.size(-1)
-    d_k_tot = q_proj_weight.size(-2)
-    d_v_tot = v_proj_weight.size(-2)
-    d_model = o_proj_weight.size(-1)
-
-    assert d_k_tot == d_model == d_v_tot, "d_k_tot == d_model == d_v_tot is required"
-    assert d_model == self.d_model, "unexpected d_model: got {}, expected {}".format(d_model, self.d_model)
-    assert d_in == self.d_model, "unexpected d_in: got {}, expected {}".format(d_in, self.d_model)
-
-    q_k_v = torch.stack(
-        [
-            rearrange(q_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=self.num_heads),
-            rearrange(k_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=self.num_heads),
-            rearrange(v_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=self.num_heads),
-        ], dim=0
-    )
-    assert q_k_v.shape == self.q_k_v.shape, "unexpected shape for q_k_v: got {}, expected {}".format(q_k_v.shape, self.q_k_v.shape)
-    self.q_k_v.data = q_k_v
-
-    assert o_proj_weight.shape == self.w_o.w.data.shape, "unexpected shape for o_proj_weight: got {}, expected {}".format(o_proj_weight.shape, self.w_o.w.data.shape)
-    self.w_o.w.data = o_proj_weight
+    return self.o_proj(att)
   
 
 class TransformerBlock(nn.Module):
@@ -502,7 +423,7 @@ class TransformerBlock(nn.Module):
       d_model: Hidden dimension of the model and of the input of the Transformer
         block.
       num_heads: Number of attention heads.
-      d_ff: int Dimensionality of the position-wise feed-forward inner layer.
+      d_ff: Dimensionality of the position-wise feed-forward inner layer.
       is_causal: Whether to apply a causal mask to prevent attention to future
         tokens.
       rope_max_seq_len: If not None, use RoPE with the given maximum sequence
@@ -535,38 +456,3 @@ class TransformerBlock(nn.Module):
     x = x + self.mha(self.rms1(x), token_positions)
     x = x + self.ff(self.rms2(x))
     return x
-
-  def set_weights(
-    self,
-    rms1_scale: Float[Tensor, " d_model"],
-    attn_q_proj_weight: Float[Tensor, " d_k_tot d_in"],
-    attn_k_proj_weight: Float[Tensor, " d_k_tot d_in"],
-    attn_v_proj_weight: Float[Tensor, " d_v_tot d_in"],
-    attn_o_proj_weight: Float[Tensor, " d_model d_v_tot"],
-    rms2_scale: Float[Tensor, " d_model"],
-    ffn_w1: Float[Tensor, " d_ff d_model"],
-    ffn_w2: Float[Tensor, " d_model d_ff"],
-    ffn_w3: Float[Tensor, " d_ff d_model"],
-  ):
-    """Set the weights of the layer.
-    
-    Args:
-      rms1_scale: Weights for the first RMSNorm layer.
-      attn_q_proj_weight: Weights for the query projection.
-      attn_k_proj_weight: Weights for the key projection.
-      attn_v_proj_weight: Weights for the value projection.
-      attn_o_proj_weight: Weights for the output projection.
-      rms2_scale: Weights for the second RMSNorm layer.
-      ffn_w1: Weights for the first linear layer.
-      ffn_w2: Weights for the second linear layer.
-      ffn_w3: Weights for the third linear layer.
-    """
-    self.rms1.set_weights(rms1_scale)
-    self.mha.set_weights(
-        attn_q_proj_weight,
-        attn_k_proj_weight,
-        attn_v_proj_weight,
-        attn_o_proj_weight,
-    )
-    self.rms2.set_weights(rms2_scale)
-    self.ff.set_weights(ffn_w1, ffn_w2, ffn_w3)
