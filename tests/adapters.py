@@ -429,23 +429,41 @@ def run_transformer_lm(
         d_ff=d_ff,
         rope_theta=rope_theta,
     )
-    llm.load_state_dict(
-        {
-            'rms1.scale': weights["ln1.weight"],
-            'mha.q_k_v_proj': torch.cat(
+    state_dict = {
+        'token_embeddings.embeddings': weights["token_embeddings.weight"],
+        'norm.scale': weights["ln_final.weight"],
+        'linear.w': weights["lm_head.weight"],
+    }
+    for layer_id in range(num_layers):
+        state_dict.update({
+            f'transformer_blocks.{layer_id}.rms1.scale': weights[f'layers.{layer_id}.ln1.weight'],
+            f'transformer_blocks.{layer_id}.mha.q_k_v_proj.w': torch.cat(
                 [
-                    weights["attn.q_proj.weight"],
-                    weights["attn.k_proj.weight"],
-                    weights["attn.v_proj.weight"],
+                    weights[f'layers.{layer_id}.attn.q_proj.weight'],
+                    weights[f'layers.{layer_id}.attn.k_proj.weight'],
+                    weights[f'layers.{layer_id}.attn.v_proj.weight'],
                 ], dim=0
             ),
-            'mha.o_proj.w': weights["attn.output_proj.weight"],
-            'rms2.scale': weights["ln2.weight"],
-            'ff.w1.w': weights["ffn.w1.weight"],
-            'ff.w2.w': weights["ffn.w2.weight"],
-            'ff.w3.w': weights["ffn.w3.weight"],
-        }
-    )
+            f'transformer_blocks.{layer_id}.mha.o_proj.w': weights[f'layers.{layer_id}.attn.output_proj.weight'],
+            f'transformer_blocks.{layer_id}.rms2.scale': weights[f'layers.{layer_id}.ln2.weight'],
+            f'transformer_blocks.{layer_id}.ff.w1.w': weights[f'layers.{layer_id}.ffn.w1.weight'],
+            f'transformer_blocks.{layer_id}.ff.w2.w': weights[f'layers.{layer_id}.ffn.w2.weight'],
+            f'transformer_blocks.{layer_id}.ff.w3.w': weights[f'layers.{layer_id}.ffn.w3.weight'],
+        })
+    llm.load_state_dict(state_dict)
+    
+    # token_embeddings.embeddings
+    
+    # transformer_blocks.0.rms1.scale
+    # transformer_blocks.0.mha.q_k_v_proj.w
+    # transformer_blocks.0.mha.o_proj.w
+    # transformer_blocks.0.rms2.scale
+    # transformer_blocks.0.ff.w1.w
+    # transformer_blocks.0.ff.w2.w
+    # transformer_blocks.0.ff.w3.w
+
+    # norm.scale
+    # linear.w
     return llm(in_indices)
 
 
