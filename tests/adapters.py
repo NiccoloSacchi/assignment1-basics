@@ -156,12 +156,8 @@ def run_multihead_self_attention(
     mha = MultiHeadSelfAttention(d_model, num_heads, is_causal=True)
     mha.load_state_dict(
         {
-            'q_k_v_proj': torch.stack(
-                [
-                    rearrange(q_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(k_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(v_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                ], dim=0
+            'q_k_v_proj.w': torch.cat(
+                [q_proj_weight, k_proj_weight, v_proj_weight], dim=0,
             ),
             'o_proj.w': o_proj_weight
         }
@@ -215,12 +211,8 @@ def run_multihead_self_attention_with_rope(
     )
     mha.load_state_dict(
         {
-            'q_k_v_proj': torch.stack(
-                [
-                    rearrange(q_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(k_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(v_proj_weight, "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                ], dim=0
+            'q_k_v_proj.w': torch.cat(
+                [q_proj_weight, k_proj_weight, v_proj_weight], dim=0,
             ),
             'o_proj.w': o_proj_weight
         }
@@ -332,11 +324,11 @@ def run_transformer_block(
     tb.load_state_dict(
         {
             'rms1.scale': weights["ln1.weight"],
-            'mha.q_k_v_proj': torch.stack(
+            'mha.q_k_v_proj.w': torch.cat(
                 [
-                    rearrange(weights["attn.q_proj.weight"], "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(weights["attn.k_proj.weight"], "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
-                    rearrange(weights["attn.v_proj.weight"], "(num_heads d_k) d_in -> num_heads d_k d_in", num_heads=num_heads),
+                    weights["attn.q_proj.weight"],
+                    weights["attn.k_proj.weight"],
+                    weights["attn.v_proj.weight"],
                 ], dim=0
             ),
             'mha.o_proj.w': weights["attn.output_proj.weight"],
@@ -437,8 +429,22 @@ def run_transformer_lm(
         d_ff=d_ff,
         rope_theta=rope_theta,
     )
-    llm.set_weights(
-        embedding_weight=weights["token_embeddings.weight"],
+    llm.load_state_dict(
+        {
+            'rms1.scale': weights["ln1.weight"],
+            'mha.q_k_v_proj': torch.cat(
+                [
+                    weights["attn.q_proj.weight"],
+                    weights["attn.k_proj.weight"],
+                    weights["attn.v_proj.weight"],
+                ], dim=0
+            ),
+            'mha.o_proj.w': weights["attn.output_proj.weight"],
+            'rms2.scale': weights["ln2.weight"],
+            'ff.w1.w': weights["ffn.w1.weight"],
+            'ff.w2.w': weights["ffn.w2.weight"],
+            'ff.w3.w': weights["ffn.w3.weight"],
+        }
     )
     return llm(in_indices)
 

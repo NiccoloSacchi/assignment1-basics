@@ -5,25 +5,6 @@ from jaxtyping import Float, Int, Bool
 from einops import einsum, reduce, rearrange
 
 
-def xavier_initialized_tensor(
-  shape: tuple[int],
-  in_features: int,
-  out_features: int,
-  device: torch.device | None = None,
-  dtype: torch.dtype | None = None,
-):
-  """Returns a Normal Xavier-initialized tensor of the given shape.  
-  """
-  std = (2 / (in_features + out_features)) ** 0.5
-  return torch.nn.init.trunc_normal_(
-      torch.empty(shape, device=device, dtype=dtype),
-      mean=0,
-      std=std,
-      a=-3*std,
-      b=3*std,
-  )
-
-
 class Linear(nn.Module):
   """A linear layer (like nn.Linear) with Xavier initialization.
   """
@@ -47,14 +28,15 @@ class Linear(nn.Module):
     # Store as (out_features, in_features) for memory ordering reasons: PyTorch
     # stores multi-dimensional arrays in row-major order and when multiplying
     # the input with w we need read the in_features.
+    std = (2 / (in_features + out_features)) ** 0.5
     self.w = nn.Parameter(
-        xavier_initialized_tensor(
-          [out_features, in_features],
-          in_features,
-          out_features,
-          device,
-          dtype,
-        )
+      torch.nn.init.trunc_normal_(
+        torch.empty((out_features, in_features), device=device, dtype=dtype),
+        mean=0,
+        std=std,
+        a=-3*std,
+        b=3*std,
+      )
     )
   
   def forward(
@@ -347,6 +329,7 @@ class MultiHeadSelfAttention(nn.Module):
     self.dtype = dtype
     
     d_k = d_model // num_heads
+    self.d_k = d_k
     
     # Initialize RoPE if specified.
     assert (rope_max_seq_len is None) == (rope_theta is None), "both rope_max_seq_len and rope_theta should be set or both should be None"
@@ -361,13 +344,7 @@ class MultiHeadSelfAttention(nn.Module):
     # dimensions and can be stored in the same tensor. Also, for memory ordering
     # reasons, the last two dimensions should represent the (out_features,
     # in_features).
-    self.q_k_v_proj = nn.Parameter(xavier_initialized_tensor(
-      [3, num_heads, d_k, d_model],
-      d_model,
-      d_k,
-      device,
-      dtype,
-    ))
+    self.q_k_v_proj = Linear(d_model, 3 * num_heads * d_k, device, dtype)
     self.o_proj = Linear(num_heads * d_k, d_model, device, dtype)
   
   def forward(
@@ -377,15 +354,16 @@ class MultiHeadSelfAttention(nn.Module):
   ) -> Float[Tensor, "... seq_len d_model"]:
     
     # Multiply the input by all the 3 matrices.
-    q_k_v = einsum(
-      x,
-      self.q_k_v_proj,
-      "... seq_len d_model, three num_head d_k d_model -> ... num_head seq_len d_k three",
+    q_k_v = self.q_k_v_proj(x)  # (..., seq_len, 3 * num_heads * d_k)
+    q_k_v = rearrange(
+      q_k_v,
+      "... seq_len (three num_head d_k) -> three ... num_head seq_len d_k",
+      three=3, num_head=self.num_heads, d_k=self.d_k,
     )
     # Extract the matrices to multiply q by k.
-    q = q_k_v[..., 0]  # (..., num_head, seq_len, d_k)
-    k = q_k_v[..., 1]  # (..., num_head, seq_len, d_k)
-    v = q_k_v[..., 2]  # (..., num_head, seq_len, d_k)
+    q = q_k_v[0, ...]  # (..., num_head, seq_len, d_k)
+    k = q_k_v[1, ...]  # (..., num_head, seq_len, d_k)
+    v = q_k_v[2, ...]  # (..., num_head, seq_len, d_k)
     
     # Apply RoPE if specified.
     if self.rope is not None:
