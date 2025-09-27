@@ -56,7 +56,7 @@ class TransformerLM(nn.Module):
         for _ in range(num_layers)
       ]
     )
-    self.norm = RMSNorm(d_model, rms_norm_eps, device, dtype)
+    self.rms = RMSNorm(d_model, rms_norm_eps, device, dtype)
     self.linear = Linear(d_model, vocab_size, device, dtype)
 
   def forward(

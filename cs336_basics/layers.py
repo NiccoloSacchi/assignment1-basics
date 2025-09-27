@@ -240,18 +240,18 @@ class RotaryPositionalEmbedding(nn.Module):
     return rearrange(x_rotated, "... seq_len d_k_half rot_row -> ... seq_len (d_k_half rot_row)")
 
 
-def softmax(x: Tensor, dim: int) -> Tensor:
+def softmax(x: Float[Tensor, "... d_model"], dim: int) -> Tensor:
   """Numerically stable softmax implementation.
   
   Args:
-    x: Input tensor of shape (..., d_model).
+    x: Input tensor.
     dim: dimenstion along which to apply the softmax opeartion.
   
   Returns:
     Tensor of same shape as input with softmax applied on the last dimension.
   """
   # Since e^x can explode to inf for big x, subtract the maximum value for
-  # numerical stability.
+  # numerical stability. Mathematically, this does not alter the result.
   x_exp = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
   return x_exp / x_exp.sum(dim=dim, keepdim=True)
   

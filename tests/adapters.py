@@ -24,6 +24,7 @@ from cs336_basics.layers import (
 )
 from cs336_basics.model import TransformerLM
 from cs336_basics.utils import read_file_to_str_iterable
+from cs336_basics.loss import cross_entropy_loss
 
 
 def run_linear(
@@ -451,19 +452,6 @@ def run_transformer_lm(
             f'transformer_blocks.{layer_id}.ff.w3.w': weights[f'layers.{layer_id}.ffn.w3.weight'],
         })
     llm.load_state_dict(state_dict)
-    
-    # token_embeddings.embeddings
-    
-    # transformer_blocks.0.rms1.scale
-    # transformer_blocks.0.mha.q_k_v_proj.w
-    # transformer_blocks.0.mha.o_proj.w
-    # transformer_blocks.0.rms2.scale
-    # transformer_blocks.0.ff.w1.w
-    # transformer_blocks.0.ff.w2.w
-    # transformer_blocks.0.ff.w3.w
-
-    # norm.scale
-    # linear.w
     return llm(in_indices)
 
 
@@ -560,7 +548,7 @@ def run_cross_entropy(
     Returns:
         Float[Tensor, ""]: The average cross-entropy loss across examples.
     """
-    raise NotImplementedError
+    return cross_entropy_loss(inputs, targets)
 
 
 def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
