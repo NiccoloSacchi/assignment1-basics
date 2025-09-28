@@ -117,3 +117,37 @@ def learning_rate_schedule(
           )
         )
     return min_learning_rate
+
+
+def gradient_clipping(
+  parameters: Iterable[torch.nn.Parameter],
+  max_l2_norm: float,
+) -> None:
+    """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
+
+    Args:
+        parameters: collection of trainable parameters.
+        max_l2_norm: a positive value containing the maximum l2-norm.
+
+    The gradients of the parameters (parameter.grad) should be modified in-place.
+    """
+    eps = 1e-6
+    
+    # Step 1: Compute the global L2 norm across all parameters.
+    total_norm = 0.0
+    for p in parameters:
+        if p.grad is not None:
+            total_norm += p.grad.data.norm(2).item() ** 2
+    total_norm = math.sqrt(total_norm)
+    
+    # If the total norm is already within the limit, do nothing.
+    if total_norm > max_l2_norm:
+      return
+    
+    # Step 2: Compute the clipping factor.
+    clip_factor = max_l2_norm / (total_norm + eps)
+    
+    # Step 3: Apply clipping.
+    for p in parameters:
+        if p.grad is not None:
+            p.grad.data.mul_(clip_factor)

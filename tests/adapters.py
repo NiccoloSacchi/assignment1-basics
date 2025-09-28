@@ -25,7 +25,11 @@ from cs336_basics.layers import (
 from cs336_basics.model import TransformerLM
 from cs336_basics.utils import read_file_to_str_iterable
 from cs336_basics.loss import cross_entropy_loss
-from cs336_basics.optimizer import AdamW, learning_rate_schedule
+from cs336_basics.optimizer import (
+    AdamW,
+    gradient_clipping,
+    learning_rate_schedule,
+)
 
 
 def run_linear(
@@ -561,7 +565,7 @@ def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm:
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return gradient_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
