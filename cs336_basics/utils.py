@@ -4,6 +4,7 @@ import json
 import os
 import re
 from typing import Iterator, Protocol
+import typing
 from jaxtyping import Float
 import torch
 from torch import Tensor
@@ -215,3 +216,48 @@ def get_batch(
     x = x.to(device)
     y = y.to(device)
     return x, y
+
+def save_checkpoint(
+  model: torch.nn.Module,
+  optimizer: torch.optim.Optimizer,
+  iteration: int,
+  out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+) -> None:
+  """Saves model state, optimizer state, and iteration to a checkpoint file.
+
+  Args:
+    model: The model to save.
+    optimizer: The optimizer to save.
+    iteration: The current training iteration.
+    out: Path or file-like object to serialize the model, optimizer, and
+      iteration to.
+  """
+  out = pathlib.Path(out)
+  torch.save(
+    {
+      'model_state_dict': model.state_dict(),
+      'optimizer_state_dict': optimizer.state_dict(),
+      'iteration': iteration,
+    },
+    out,
+  )
+
+
+def load_checkpoint(
+  src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
+  model: torch.nn.Module,
+  optimizer: torch.optim.Optimizer,
+) -> int:
+  """Loads model state, optimizer state, and iteration from a checkpoint file.
+
+  Args:
+    src: Path or file-like object to serialized checkpoint.
+    model: The model to load the state into.
+    optimizer: The optimizer to load the state into.
+  Returns:
+    The iteration number loaded from the checkpoint.
+  """
+  checkpoint = torch.load(src)
+  model.load_state_dict(checkpoint['model_state_dict'])
+  optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+  return checkpoint['iteration']
