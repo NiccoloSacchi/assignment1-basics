@@ -23,7 +23,7 @@ from cs336_basics.layers import (
     scaled_dot_product_attention,
 )
 from cs336_basics.model import TransformerLM
-from cs336_basics.utils import read_file_to_str_iterable
+from cs336_basics.utils import read_file_to_str_iterable, get_batch
 from cs336_basics.loss import cross_entropy_loss
 from cs336_basics.optimizer import (
     AdamW,
@@ -519,7 +519,7 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
+    return get_batch(dataset, batch_size, context_length, device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:

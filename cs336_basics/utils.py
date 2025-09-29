@@ -4,6 +4,9 @@ import json
 import os
 import re
 from typing import Iterator, Protocol
+from jaxtyping import Float
+import torch
+from torch import Tensor
 import tqdm
 import pathlib
 import numpy as np
@@ -170,3 +173,45 @@ def compression_ratio(tokenizer: Tokenizer, text: str) -> float:
   num_bytes = len(text.encode('utf-8'))
   num_tokens = len(tokenizer.encode(text))
   return num_bytes/num_tokens if num_tokens > 0 else float('inf')
+
+def get_batch(
+    dataset: np.typing.NDArray,
+    batch_size: int,
+    context_length: int,
+    device: str,
+) -> tuple[
+  Float[Tensor, "batch_size context_length"],
+  Float[Tensor, "batch_size context_length"],
+]:
+    """
+    Sample random batches from a dataset for language modeling.
+    
+    Args:
+        dataset: 1D numpy array of integer token IDs. Also works with np.memmap.
+        batch_size: Number of sequences to sample.
+        context_length: Length of each sequence.
+        device: PyTorch device string (e.g., 'cpu' or 'cuda:0').
+    
+    Returns:
+        Tuple of torch.LongTensors of shape (batch_size, context_length).
+        First tensor contains input sequences, second contains target sequences 
+        (input shifted by 1).
+    """
+    assert context_length < len(dataset), "Context length must be less than dataset length."
+    
+    # Sample random starting indices.
+    indices = np.random.choice(len(dataset) - context_length, batch_size, replace=False)
+    
+    # Create input sequences (x) and target sequences (y, shifted by 1).
+    x_np = np.empty((batch_size, context_length), dtype=dataset.dtype)
+    y_np = np.empty((batch_size, context_length), dtype=dataset.dtype)
+    for idx, i in enumerate(indices):
+        x_np[idx] = dataset[i:i+context_length]
+        y_np[idx] = dataset[i+1:i+1+context_length]
+    x = torch.from_numpy(x_np)
+    y = torch.from_numpy(y_np)
+
+    # Move to specified device.
+    x = x.to(device)
+    y = y.to(device)
+    return x, y
