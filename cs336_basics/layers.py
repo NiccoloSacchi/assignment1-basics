@@ -181,7 +181,10 @@ class RotaryPositionalEmbedding(nn.Module):
   def compute_cos_sin_cache(self):
     # Generate the base angles for each position in the vector of size d_k.
     base_thetas = 1.0 / (
-      self.base ** (torch.arange(0, self.d_k-1, 2).float() / self.d_k)  # d_k-1 to handle odd d_k.
+      self.base ** (
+        # d_k-1 to handle odd d_k.
+        torch.arange(0, self.d_k-1, 2, device=self.device).float() / self.d_k
+      ) 
     )
     # Generate the angles for each token position: multiply the angles by each
     # position.

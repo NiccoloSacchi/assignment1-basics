@@ -26,7 +26,14 @@ class SGD(torch.optim.Optimizer):
 
 
 class AdamW(torch.optim.Optimizer):  
-  def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01):
+  def __init__(
+    self,
+    params: Iterable[torch.nn.Parameter],
+    lr: float = 1e-3,
+    betas: tuple[float, float] = (0.9, 0.999),
+    eps: float = 1e-8,
+    weight_decay: float = 0.01,
+  ):
     if lr < 0:
       raise ValueError(f"Invalid learning rate: {lr}")
     if not 0.0 <= betas[0] < 1.0:
@@ -72,14 +79,61 @@ class AdamW(torch.optim.Optimizer):
         state["v"] = beta2 * state["v"] + (1 - beta2) * grad.pow(2)
         
         # Compute bias-corrected learning rate.
-        t = state.get("t", 1)
+        t = state.get("iteration", 1)
         lr_corr = lr * math.sqrt(1 - beta2 ** t) / (1 - beta1 ** t)
-        state["t"] = t + 1
+        state["iteration"] = t + 1
 
         # Update parameters in place.
         p.data -= lr * weight_decay * p.data
         p.data -= lr_corr * state["m"] / (state["v"].sqrt() + eps)
     return loss
+
+
+class CosineLearningRateScheduler:
+  """
+  CosineLearningRateScheduler applies a cosine annealing learning rate schedule
+  with linear warmup to a PyTorch optimizer.
+
+  Args:
+      optimizer (torch.optim.Optimizer): The optimizer whose learning rate will be scheduled.
+      max_learning_rate (float): The maximum learning rate after warmup.
+      min_learning_rate (float): The minimum learning rate at the end of the cosine cycle.
+      warmup_iters (int): Number of iterations for linear warmup.
+      cosine_cycle_iters (int): Number of iterations for cosine annealing.
+
+  Usage:
+      scheduler = CosineLearningRateScheduler(optimizer, max_lr, min_lr, warmup_iters, cosine_cycle_iters)
+      for iteration in range(num_iterations):
+          scheduler.step()
+  """
+  def __init__(
+    self,
+    optimizer: torch.optim.Optimizer,
+    max_learning_rate: float,
+    min_learning_rate: float,
+    warmup_iters: int,
+    cosine_cycle_iters: int,
+  ):
+    self.optimizer = optimizer
+    self.max_learning_rate = max_learning_rate
+    self.min_learning_rate = min_learning_rate
+    self.warmup_iters = warmup_iters
+    self.cosine_cycle_iters = cosine_cycle_iters
+
+  def step(self):
+    # Update the learning rate in the optimizer.
+    lr_map = {}
+    for param_group in self.optimizer.param_groups:
+      t = param_group.get("iteration", 1)
+      if t not in lr_map:
+        lr_map[t] = learning_rate_schedule(
+          it=t,
+          max_learning_rate=self.max_learning_rate,
+          min_learning_rate=self.min_learning_rate,
+          warmup_iters=self.warmup_iters,
+          cosine_cycle_iters=self.cosine_cycle_iters,
+        )
+      param_group['lr'] = lr_map[t]
 
 
 def learning_rate_schedule(
@@ -108,12 +162,16 @@ def learning_rate_schedule(
         Learning rate at the given iteration under the specified schedule.
     """
     if it < warmup_iters:
-        return min_learning_rate + (max_learning_rate - min_learning_rate) * it / warmup_iters
-    elif it < warmup_iters + cosine_cycle_iters:
+        # return min_learning_rate + (max_learning_rate - min_learning_rate) * it / warmup_iters
+        return max_learning_rate * it / warmup_iters
+
+    if it < cosine_cycle_iters:
         return (
           min_learning_rate +
-          0.5 * (max_learning_rate - min_learning_rate) * (
-            1 + math.cos(math.pi * (it - warmup_iters) / cosine_cycle_iters)
+          0.5 * (
+            1 + math.cos(math.pi * (it - warmup_iters) / (cosine_cycle_iters - warmup_iters))
+          ) * (
+            max_learning_rate - min_learning_rate
           )
         )
     return min_learning_rate
@@ -133,21 +191,17 @@ def gradient_clipping(
     """
     eps = 1e-6
     
-    # Step 1: Compute the global L2 norm across all parameters.
-    total_norm = 0.0
-    for p in parameters:
-        if p.grad is not None:
-            total_norm += p.grad.data.norm(2).item() ** 2
-    total_norm = math.sqrt(total_norm)
+    # Collect all parameters that have gradients
+    params_with_grad = [p for p in parameters if p.grad is not None]
     
-    # If the total norm is already within the limit, do nothing.
+    if not params_with_grad:
+        return
+    
+    # Compute the total L2 norm across all gradients
+    total_norm = torch.sqrt(sum(p.grad.data.norm(2) ** 2 for p in params_with_grad))
+    
+    # If the total norm exceeds the maximum, scale all gradients
     if total_norm > max_l2_norm:
-      return
-    
-    # Step 2: Compute the clipping factor.
-    clip_factor = max_l2_norm / (total_norm + eps)
-    
-    # Step 3: Apply clipping.
-    for p in parameters:
-        if p.grad is not None:
-            p.grad.data.mul_(clip_factor)
+        clip_coef = max_l2_norm / (total_norm + eps)
+        for p in params_with_grad:
+            p.grad.data.mul_(clip_coef)

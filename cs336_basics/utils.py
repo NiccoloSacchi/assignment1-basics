@@ -139,7 +139,7 @@ def write_int_iterable_to_byte_file(
   with open(metadata_path, "w") as f:
       json.dump(metadata, f)
 
-def read_byte_file_to_memmap(path: str, metadata_path: str) -> np.memmap:
+def read_byte_file_to_memmap(path: str, metadata_path: str | None) -> np.memmap:
   """Reads a binary file of integers as a memory-mapped array.
 
   Args:
@@ -149,6 +149,9 @@ def read_byte_file_to_memmap(path: str, metadata_path: str) -> np.memmap:
   Returns:
     A memory-mapped array of integers.
   """
+  if metadata_path is None:
+    return np.load(path, mmap_mode="r")
+
   with open(metadata_path, "r") as f:
     metadata = json.load(f)
   dtype = np.dtype(metadata["dtype"])
@@ -180,6 +183,7 @@ def get_batch(
     batch_size: int,
     context_length: int,
     device: str,
+    dtype: torch.dtype | None = None,
 ) -> tuple[
   Float[Tensor, "batch_size context_length"],
   Float[Tensor, "batch_size context_length"],
@@ -192,6 +196,8 @@ def get_batch(
         batch_size: Number of sequences to sample.
         context_length: Length of each sequence.
         device: PyTorch device string (e.g., 'cpu' or 'cuda:0').
+        dtype: Target dtype for the returned tensors. If specified, tensors are
+          converted to this dtype before moving to device.
     
     Returns:
         Tuple of torch.LongTensors of shape (batch_size, context_length).
@@ -211,6 +217,10 @@ def get_batch(
         y_np[idx] = dataset[i+1:i+1+context_length]
     x = torch.from_numpy(x_np)
     y = torch.from_numpy(y_np)
+
+    if dtype:
+      x = x.to(dtype)
+      y = y.to(dtype)
 
     # Move to specified device.
     x = x.to(device)

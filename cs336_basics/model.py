@@ -74,7 +74,7 @@ class TransformerLM(nn.Module):
       x = self.token_embeddings(input_ids)  # (..., context_length, d_model)
       for block in self.transformer_blocks:
         x = block(x)  # (..., context_length, d_model)
-      x = self.norm(x)  # (..., context_length, d_model)
+      x = self.rms(x)  # (..., context_length, d_model)
       logits = self.linear(x)  # (..., context_length, vocab_size)
       return logits  # (..., context_length, vocab_size)
 

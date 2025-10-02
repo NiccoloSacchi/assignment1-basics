@@ -442,7 +442,7 @@ def run_transformer_lm(
     )
     state_dict = {
         'token_embeddings.embeddings': weights["token_embeddings.weight"],
-        'norm.scale': weights["ln_final.weight"],
+        'rms.scale': weights["ln_final.weight"],
         'linear.w': weights["lm_head.weight"],
     }
     for layer_id in range(num_layers):

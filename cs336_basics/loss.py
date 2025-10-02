@@ -4,7 +4,6 @@ from jaxtyping import Float, Int
 from einops import einsum, reduce, rearrange
 
 
-
 def cross_entropy_loss(
   inputs: Float[Tensor, " batch_size vocab_size"], targets: Int[Tensor, " batch_size"]
 ) -> Float[Tensor, ""]:
