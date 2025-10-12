@@ -24,16 +24,18 @@ from cs336_basics.layers import (
 )
 from cs336_basics.model import TransformerLM
 from cs336_basics.utils import (
-    read_file_to_str_iterable,
     get_batch,
-    save_checkpoint,
-    load_checkpoint,
 )
 from cs336_basics.loss import cross_entropy_loss
 from cs336_basics.optimizer import (
     AdamW,
     gradient_clipping,
     learning_rate_schedule,
+)
+from cs336_basics.io import (
+    save_checkpoint,
+    _load_checkpoint,
+    read_file_to_str_iterable,
 )
 
 
@@ -651,7 +653,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    return load_checkpoint(src, model, optimizer)
+    return _load_checkpoint(src, model, optimizer)
 
 
 def get_tokenizer(

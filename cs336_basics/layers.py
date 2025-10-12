@@ -4,6 +4,9 @@ from torch import nn, Tensor
 from jaxtyping import Float, Int, Bool
 from einops import einsum, reduce, rearrange
 
+from cs336_basics.utils import softmax
+
+
 
 class Linear(nn.Module):
   """A linear layer (like nn.Linear) with Xavier initialization.
@@ -241,25 +244,6 @@ class RotaryPositionalEmbedding(nn.Module):
     )
 
     return rearrange(x_rotated, "... seq_len d_k_half rot_row -> ... seq_len (d_k_half rot_row)")
-
-
-def softmax(
-  x: Float[Tensor, "... d_model"],
-  dim: int,
-) -> Float[Tensor, "... d_model"]:
-  """Numerically stable softmax implementation.
-  
-  Args:
-    x: Input tensor.
-    dim: dimenstion along which to apply the softmax opeartion.
-  
-  Returns:
-    Tensor of same shape as input with softmax applied on the last dimension.
-  """
-  # Since e^x can explode to inf for big x, subtract the maximum value for
-  # numerical stability. Mathematically, this does not alter the result.
-  x_exp = torch.exp(x - x.max(dim=dim, keepdim=True)[0])
-  return x_exp / x_exp.sum(dim=dim, keepdim=True)
   
   
 def scaled_dot_product_attention(

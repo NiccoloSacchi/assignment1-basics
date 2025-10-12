@@ -40,6 +40,20 @@ class TransformerLM(nn.Module):
       dtype: Data type of the parameters.
     """
     super().__init__()
+
+    # Used to save and load how the model.
+    self._init_args = {
+      "vocab_size": vocab_size,
+      "context_length": context_length,
+      "num_layers": num_layers,
+      "d_model": d_model,
+      "num_heads": num_heads,
+      "d_ff": d_ff,
+      "rope_theta": rope_theta,
+      "rms_norm_eps": rms_norm_eps,
+      "device": device,
+      "dtype": dtype,
+    }
     self.token_embeddings = Embedding(vocab_size, d_model, device, dtype)
     self.transformer_blocks = nn.ModuleList(
       [
@@ -58,6 +72,9 @@ class TransformerLM(nn.Module):
     )
     self.rms = RMSNorm(d_model, rms_norm_eps, device, dtype)
     self.linear = Linear(d_model, vocab_size, device, dtype)
+  
+  def init_args(self):
+    return self._init_args
 
   def forward(
       self,
@@ -77,4 +94,3 @@ class TransformerLM(nn.Module):
       x = self.rms(x)  # (..., context_length, d_model)
       logits = self.linear(x)  # (..., context_length, vocab_size)
       return logits  # (..., context_length, vocab_size)
-

@@ -44,14 +44,20 @@ class AdamW(torch.optim.Optimizer):
       raise ValueError(f"Invalid epsilon value: {eps}")
     if weight_decay < 0:
       raise ValueError(f"Invalid weight_decay value: {weight_decay}")
-    defaults = {
+
+    self._init_args = {
       "lr": lr,
       "betas": betas,
       "eps": eps,
       "weight_decay": weight_decay,
     }
+    
+    defaults = self._init_args
     super().__init__(params, defaults)
-  
+
+  def init_args(self):
+    return self._init_args
+
   def step(self, closure: Optional[Callable] = None):
     loss = None if closure is None else closure()
     

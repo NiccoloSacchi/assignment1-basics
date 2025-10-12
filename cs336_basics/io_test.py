@@ -1,6 +1,6 @@
 import os
 import tempfile
-from cs336_basics.utils import read_file_to_str_iterable, write_int_iterable_to_byte_file, read_byte_file_to_memmap, ROOT_PATH
+from cs336_basics.io import read_file_to_str_iterable, write_int_iterable_to_byte_file, read_byte_file_to_memmap, ROOT_PATH
 import numpy as np
 
 
