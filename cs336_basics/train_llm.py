@@ -50,6 +50,7 @@ from cs336_basics.optimizer import (
   gradient_clipping,
 )
 from cs336_basics.loss import cross_entropy_loss
+import time
 
 
 # ============================================================================
@@ -284,6 +285,7 @@ Resume training from a checkpoint in this directory with the following command:
   
   create_readme = True
   if os.path.exists(readme_path):
+    print("============================================================================")
     create_readme = input(f"{readme_path} already exists. Overwrite? (y/n): ")
     if create_readme.lower() != 'y':
       print("Skipping README.md creation.")
@@ -297,6 +299,9 @@ Resume training from a checkpoint in this directory with the following command:
 # ============================================================================
 print("============================================================================")
 
+start_time = time.time()
+step_width = len(str(total_iterations))
+tokens_width = len(str(args.total_tokens))
 for iteration in range(start_iteration, total_iterations):
   x, y = get_batch(
     dataset=train_data,
@@ -315,7 +320,11 @@ for iteration in range(start_iteration, total_iterations):
   optimizer.step()
   
   # Validation.
-  loss_message = ""
+  current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+  elapsed_str = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+  loss_message = (
+    f"[{current_time}] | elapsed={elapsed_str} | step={iteration:>{step_width}}/{total_iterations} | train_loss={train_loss.item():.4f}"
+  )
   if iteration % args.validation_interval == 0:
     with torch.no_grad():
       val_x, val_y = get_batch(
@@ -327,10 +336,11 @@ for iteration in range(start_iteration, total_iterations):
       )
       val_logits = model(val_x)
       val_loss = cross_entropy_loss(val_logits, val_y)
-    loss_message = f"Iteration {iteration} (lr: {lr:.6f}): Train loss = {train_loss.item():.4f}, Val loss = {val_loss.item():.4f}"
+    loss_message += f" | val_loss={val_loss.item():.4f}"
   else:
-    loss_message = f"Iteration {iteration} (lr: {lr:.6f}): Train loss = {train_loss.item():.4f}"
-  print(loss_message)
+    loss_message += " | val_loss=------"
+  tokens_processed = iteration * args.batch_size * args.context_length
+  print(f"{loss_message} | lr={lr:.6f} | tokens processed={tokens_processed:>{tokens_width}}/{args.total_tokens}")
 
   # Log training loss.
   if args.log_dir:
