@@ -243,7 +243,10 @@ class RotaryPositionalEmbedding(nn.Module):
     return rearrange(x_rotated, "... seq_len d_k_half rot_row -> ... seq_len (d_k_half rot_row)")
 
 
-def softmax(x: Float[Tensor, "... d_model"], dim: int) -> Tensor:
+def softmax(
+  x: Float[Tensor, "... d_model"],
+  dim: int,
+) -> Float[Tensor, "... d_model"]:
   """Numerically stable softmax implementation.
   
   Args:

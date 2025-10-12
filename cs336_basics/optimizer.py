@@ -78,10 +78,13 @@ class AdamW(torch.optim.Optimizer):
         state["m"] = beta1 * state["m"] + (1 - beta1) * grad
         state["v"] = beta2 * state["v"] + (1 - beta2) * grad.pow(2)
         
-        # Compute bias-corrected learning rate.
-        t = state.get("iteration", 1)
+        # Compute bias-corrected learning rate. Step might be different from
+        # iteration number as some parameters might be unused in forward pass or
+        # have been added later to the model.
+        t = state.get("step", 0)
+        t += 1
         lr_corr = lr * math.sqrt(1 - beta2 ** t) / (1 - beta1 ** t)
-        state["iteration"] = t + 1
+        state["step"] = t
 
         # Update parameters in place.
         p.data -= lr * weight_decay * p.data
@@ -95,16 +98,16 @@ class CosineLearningRateScheduler:
   with linear warmup to a PyTorch optimizer.
 
   Args:
-      optimizer (torch.optim.Optimizer): The optimizer whose learning rate will be scheduled.
-      max_learning_rate (float): The maximum learning rate after warmup.
-      min_learning_rate (float): The minimum learning rate at the end of the cosine cycle.
-      warmup_iters (int): Number of iterations for linear warmup.
-      cosine_cycle_iters (int): Number of iterations for cosine annealing.
+      optimizer: The optimizer whose learning rate will be scheduled.
+      max_learning_rate: The maximum learning rate after warmup.
+      min_learning_rate: The minimum learning rate at the end of the cosine cycle.
+      warmup_iters: Number of iterations for linear warmup.
+      cosine_cycle_iters: Number of iterations for cosine annealing.
 
   Usage:
       scheduler = CosineLearningRateScheduler(optimizer, max_lr, min_lr, warmup_iters, cosine_cycle_iters)
       for iteration in range(num_iterations):
-          scheduler.step()
+          lr = scheduler.step(iteration)  # Pass current iteration 0-indexed.
   """
   def __init__(
     self,
@@ -120,20 +123,18 @@ class CosineLearningRateScheduler:
     self.warmup_iters = warmup_iters
     self.cosine_cycle_iters = cosine_cycle_iters
 
-  def step(self):
+  def step(self, iteration: int) -> float:
     # Update the learning rate in the optimizer.
-    lr_map = {}
+    lr = learning_rate_schedule(
+      it=iteration+1,  # Convert to 1-indexed.
+      max_learning_rate=self.max_learning_rate,
+      min_learning_rate=self.min_learning_rate,
+      warmup_iters=self.warmup_iters,
+      cosine_cycle_iters=self.cosine_cycle_iters,
+    )
     for param_group in self.optimizer.param_groups:
-      t = param_group.get("iteration", 1)
-      if t not in lr_map:
-        lr_map[t] = learning_rate_schedule(
-          it=t,
-          max_learning_rate=self.max_learning_rate,
-          min_learning_rate=self.min_learning_rate,
-          warmup_iters=self.warmup_iters,
-          cosine_cycle_iters=self.cosine_cycle_iters,
-        )
-      param_group['lr'] = lr_map[t]
+      param_group['lr'] = lr
+    return lr
 
 
 def learning_rate_schedule(
@@ -149,7 +150,7 @@ def learning_rate_schedule(
     iteration under the specified schedule.
 
     Args:
-        it (int): Iteration number to get learning rate for.
+        it (int): Iteration number to get learning rate for. 1-indexed.
         max_learning_rate (float): alpha_max, the maximum learning rate for
             cosine learning rate schedule (with warmup).
         min_learning_rate (float): alpha_min, the minimum / final learning rate for
