@@ -176,9 +176,9 @@ def save_checkpoint(
 def load_checkpoint(
   src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes],
   model_class: type[torch.nn.Module],
-  optimizer_class: type[torch.optim.Optimizer],
+  optimizer_class: type[torch.optim.Optimizer] | None = None,
   device: str | torch.device = 'cpu'
-):
+) -> tuple[torch.nn.Module, torch.optim.Optimizer, int]:
   """Loads model state, optimizer state, and iteration from a checkpoint file.
 
   Args:
@@ -195,13 +195,17 @@ def load_checkpoint(
     del checkpoint['model_init_args']['device']
   if 'device' in checkpoint['optimizer_init_args']:
     del checkpoint['optimizer_init_args']['device']
+
   model = model_class(device=device, **checkpoint['model_init_args'])
-  optimizer = optimizer_class(
-    params=model.parameters(),
-    **checkpoint['optimizer_init_args'],
-  )
   model.load_state_dict(checkpoint['model_state_dict'])
-  optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+  optimizer = None
+  if optimizer_class is not None:
+    optimizer = optimizer_class(
+      params=model.parameters(),
+      **checkpoint['optimizer_init_args'],
+    )
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
   return model, optimizer, checkpoint['iteration']
 
 

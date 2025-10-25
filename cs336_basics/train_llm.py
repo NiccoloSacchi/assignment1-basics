@@ -48,6 +48,7 @@ Example usage for OpenWebText dataset:
     ...
 """
 
+import wandb
 import argparse
 import os
 import torch
@@ -126,11 +127,11 @@ parser.add_argument(
 
 # Optimizer hyperparameters
 parser.add_argument(
-  '--betas', type=float, nargs=2, required=False,
+  '--betas', type=float, nargs=2, required=False, default=(0.9, 0.95),
   help='Beta coefficients for AdamW.',
 )  
 parser.add_argument(
-  '--weight_decay', type=float, required=False,
+  '--weight_decay', type=float, required=False, default=0.0,
   help='Weight decay coefficient for AdamW.',
 )
 
@@ -183,6 +184,40 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+
+# ============================================================================
+# Initialize Weights and Biases
+# ============================================================================
+# 1. Define your configuration (optional but recommended)
+config = {
+    "vocab_size": args.vocab_size,
+    "context_length": args.context_length,
+    "num_layers": args.num_layers,
+    "d_model": args.d_model,
+    "num_heads": args.num_heads,
+    "d_ff": args.d_ff,
+    "rope_theta": args.rope_theta,
+    "device": args.device,
+    "betas": args.betas,
+    "weight_decay": args.weight_decay,
+    "warmup_iters": args.warmup_iters,
+    "max_learning_rate": args.max_learning_rate,
+    "min_learning_rate": args.min_learning_rate,
+    "batch_size": args.batch_size,
+    "total_tokens": args.total_tokens,
+    "validation_interval": args.validation_interval,
+    "log_dir": args.log_dir,
+    "checkpoint_dir": args.checkpoint_dir,
+    "checkpoint_interval": args.checkpoint_interval,
+}
+
+# 2. Initialize a new run
+wandb.init(
+    project="llm-project",  # Name of your W&B project
+    config=config,                       # Pass in your configuration
+    # name="run-with-lr-0.01",             # Optional, for a descriptive run name
+)
+
 
 # ============================================================================
 # DATA LOADING
@@ -286,56 +321,81 @@ print("=========================================================================
 start_time = time.time()
 step_width = len(str(total_iterations))
 tokens_width = len(str(args.total_tokens))
-for iteration in range(start_iteration, total_iterations):
-  x, y = get_batch(
-    dataset=train_data,
-    batch_size=args.batch_size,
-    context_length=context_length,
-    device=args.device,
-    dtype=torch.int32,
-  )
-  logits = model(x)
-  train_loss = cross_entropy_loss(logits, y)
-  optimizer.zero_grad()
-  train_loss.backward()
 
-  gradient_clipping(model.parameters(), max_l2_norm=1.0)
-  lr = scheduler.step(iteration)
-  optimizer.step()
-  
-  # Validation.
-  current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-  elapsed_str = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
-  loss_message = (
-    f"[{current_time}] | elapsed={elapsed_str} | step={iteration:>{step_width}}/{total_iterations} | train_loss={train_loss.item():.4f}"
-  )
-  if iteration % args.validation_interval == 0:
-    with torch.no_grad():
-      val_x, val_y = get_batch(
-        dataset=val_data,
-        batch_size=args.batch_size,
-        context_length=context_length,
-        device=args.device,
-        dtype=torch.int32,
-      )
-      val_logits = model(val_x)
-      val_loss = cross_entropy_loss(val_logits, val_y)
-    loss_message += f" | val_loss={val_loss.item():.4f}"
-  else:
-    loss_message += " | val_loss=------"
-  tokens_processed = iteration * args.batch_size * context_length
-  loss_message = f"{loss_message} | lr={lr:.6f} | tokens processed={tokens_processed:>{tokens_width}}/{args.total_tokens}"
-  print(loss_message)
+try:
+  for iteration in range(start_iteration, total_iterations):
+    iteration_start_time = time.time()
+    x, y = get_batch(
+      dataset=train_data,
+      batch_size=args.batch_size,
+      context_length=context_length,
+      device=args.device,
+      dtype=torch.int32,
+    )
+    logits = model(x)
+    train_loss = cross_entropy_loss(logits, y)
+    optimizer.zero_grad()
+    train_loss.backward()
 
-  # Log training loss.
-  if args.log_dir:
-    log_file.write(loss_message + "\n")
-    log_file.flush()
+    gradient_clipping(model.parameters(), max_l2_norm=1.0)
+    lr = scheduler.step(iteration)
+    optimizer.step()
+    
+    # Validation.
+    current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    total_duration_str = time.strftime("%H:%M:%S", time.gmtime(time.time() - start_time))
+    iteration_duration = time.time() - iteration_start_time
+    iteration_duration_str = time.strftime("%H:%M:%S", time.gmtime(iteration_duration))
+    loss_message = (
+      f"[{current_time}] | total_duration={total_duration_str} | iteration_duration={iteration_duration_str} | step={iteration:>{step_width}}/{total_iterations} | train_loss={train_loss.item():.4f}"
+    )
+    val_loss = None
+    if iteration % args.validation_interval == 0:
+      with torch.no_grad():
+        val_x, val_y = get_batch(
+          dataset=val_data,
+          batch_size=args.batch_size,
+          context_length=context_length,
+          device=args.device,
+          dtype=torch.int32,
+        )
+        val_logits = model(val_x)
+        val_loss = cross_entropy_loss(val_logits, val_y).item()
+      loss_message += f" | val_loss={val_loss:.4f}"
+    else:
+      loss_message += " | val_loss=------"
+    tokens_processed = iteration * args.batch_size * context_length
+    loss_message = f"{loss_message} | lr={lr:.6f} | tokens processed={tokens_processed:>{tokens_width}}/{args.total_tokens}"
+    print(loss_message)
 
-  # Save checkpoint.
-  if args.checkpoint_dir and iteration != 0 and iteration % args.checkpoint_interval == 0:
-      checkpoint_path = os.path.join(args.checkpoint_dir, f"checkpoint_{iteration}.pt")
-      save_checkpoint(model, optimizer, iteration, checkpoint_path)
-      print(f"Checkpoint saved at iteration {iteration}")
+    # Log training loss to file and to Weights & Biases.
+    if args.log_dir:
+      log_file.write(loss_message + "\n")
+      log_file.flush()
+    
+    wandb.log(
+      {
+        "train_loss": train_loss.item(),
+        "val_loss": val_loss,
+        "learning_rate": lr,
+        "tokens_processed": tokens_processed,
+        "iteration_duration": iteration_duration,
+      },
+      step=iteration,
+    )
 
-log_file.close()
+    # Save checkpoint.
+    if args.checkpoint_dir and iteration != 0 and iteration % args.checkpoint_interval == 0:
+        checkpoint_path = os.path.join(args.checkpoint_dir, f"checkpoint_{iteration}.pt")
+        save_checkpoint(model, optimizer, iteration, checkpoint_path)
+        print(f"Checkpoint saved at iteration {iteration}")
+except KeyboardInterrupt:
+    print("\nTraining interrupted by user.")
+except Exception as e:
+    print(f"\nTraining failed with error: {e}")
+    raise
+finally:
+    if log_file:
+        log_file.close()
+    wandb.finish()
+    print("Cleanup completed.")

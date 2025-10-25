@@ -92,22 +92,17 @@ def get_batch(
 def softmax(
   x: Float[Tensor, "... D"],
   dim: int,
-  temperature: float = 1.0,
 ) -> Float[Tensor, "... D"]:
   """Numerically stable softmax implementation.
   
   Args:
     x: Input tensor.
-    dim: dimenstion along which to apply the softmax opeartion.
-    temperature: Temperature value to divide the input by before applying
-      softmax. Higher temperature values result in a more uniform distribution,
-      while lower values result in a distribution that is more concentrated on
-      the highest values.
+    dim: dimenstion along which to apply the softmax operation.
 
   Returns:
     Tensor of same shape as input with softmax applied on the last dimension.
   """
   # Since e^x can explode to inf for big x, subtract the maximum value for
   # numerical stability. Mathematically, this does not alter the result.
-  x_exp = torch.exp((x - x.max(dim=dim, keepdim=True)[0]) / temperature)
+  x_exp = torch.exp((x - x.max(dim=dim, keepdim=True)[0]))
   return x_exp / x_exp.sum(dim=dim, keepdim=True)
