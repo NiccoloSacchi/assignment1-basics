@@ -52,6 +52,7 @@ import argparse
 import os
 import torch
 from torch.utils.data import DataLoader
+from torchinfo import summary
 from cs336_basics.io import (
   read_byte_file_to_memmap,
   load_checkpoint,
@@ -186,7 +187,7 @@ args = parser.parse_args()
 # ============================================================================
 # Initialize Weights and Biases
 # ============================================================================
-# 1. Define your configuration (optional but recommended)
+# 1. Define your configuration (optional but recommended).
 config = {
     "vocab_size": args.vocab_size,
     "context_length": args.context_length,
@@ -209,7 +210,7 @@ config = {
     "checkpoint_interval": args.checkpoint_interval,
 }
 
-# 2. Initialize a new run
+# 2. Initialize a new run.
 wandb.init(
     project="llm-project",  # Name of your W&B project
     config=config,                       # Pass in your configuration
@@ -234,12 +235,10 @@ if args.load_checkpoint:
   start_iteration = last_iteration + 1
   print(f"Resuming training from iteration {start_iteration}")
   print("============================================================================")
-  device = next(model.parameters()).device
-  print(f"Model loaded from checkpoint and instantiated on device {device}:")
-  print(model)
-  print("============================================================================")
   print(f"Optimizer loaded from checkpoint and instantiated:")
   print(optimizer)
+  print("============================================================================")
+  print(f"Model loaded from checkpoint.")
 
 # ============================================================================
 # INSTANTIATE THE MODEL
@@ -256,10 +255,17 @@ if model is None:
     device=torch.device(args.device),
     dtype=torch.float32,
   )
-  print("============================================================================")
-  device = next(model.parameters()).device
-  print(f"Model instantiated on device {device}:")
-  print(model)
+print("============================================================================")
+device = next(model.parameters()).device
+print(f"Model instantiated on device {device}:")
+summary(
+  model,
+  input_data=torch.randint(0, args.vocab_size, (1, args.context_length)),
+  col_names=["output_size", "num_params"],
+  row_settings=["var_names"],
+  depth=10,
+)
+
 
 # ============================================================================
 # INSTANTIATE THE OPTIMIZER AND LEARNING RATE SCHEDULER
