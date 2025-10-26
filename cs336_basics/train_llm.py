@@ -18,11 +18,11 @@ Example usages for TinyStories dataset:
     --max_learning_rate 1e-3 \
     --min_learning_rate 1e-5 \
     --batch_size 16 \
+    --pre_fetch_batches_mb 4096 \
     --total_tokens 327680000 \
     --validation_interval 100 \
-    --log_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model \
     --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model \
-    --checkpoint_interval 100
+    --checkpoint_interval 1000
     
   .venv/bin/python cs336_basics/train_llm.py \
     --train_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy \
@@ -34,7 +34,6 @@ Example usages for TinyStories dataset:
     --batch_size 16 \
     --total_tokens 327680000 \
     --validation_interval 100 \
-    --log_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model \
     --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model \
     --checkpoint_interval 100 \
     --load_checkpoint /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model/checkpoint_10.pt
@@ -52,12 +51,13 @@ import wandb
 import argparse
 import os
 import torch
+from torch.utils.data import DataLoader
 from cs336_basics.io import (
   read_byte_file_to_memmap,
   load_checkpoint,
   save_checkpoint,
+  MemmapTokenDataset,
 )
-from cs336_basics.utils import  get_batch
 from cs336_basics.model import TransformerLM
 from cs336_basics.optimizer import (
   AdamW,
@@ -155,6 +155,10 @@ parser.add_argument(
   help='Batch size for training.',
 )
 parser.add_argument(
+  '--pre_fetch_batches_mb', type=int, required=False, default=1024,
+  help='How much training data to pre-fetch (in MB) for training.',
+)
+parser.add_argument(
   '--total_tokens', type=int, required=True,
   help='Total number of tokens to process during training. total_iterations ~= total_tokens / (batch_size * context_length).',
 )
@@ -175,12 +179,6 @@ parser.add_argument(
 parser.add_argument(
   '--load_checkpoint', type=str, default=None, required=False,
   help='Optional. Path to checkpoint file to resume training from. If passed, the above model and optimizer hyperparameters are ignored.',
-)
-
-# Logging.
-parser.add_argument(
-  '--log_dir', type=str, default=None,
-  help='If passed, training and validation losses will be logged to this directory.',
 )
 
 args = parser.parse_args()
@@ -204,9 +202,9 @@ config = {
     "max_learning_rate": args.max_learning_rate,
     "min_learning_rate": args.min_learning_rate,
     "batch_size": args.batch_size,
+    "pre_fetch_batches_mb": args.pre_fetch_batches_mb,
     "total_tokens": args.total_tokens,
     "validation_interval": args.validation_interval,
-    "log_dir": args.log_dir,
     "checkpoint_dir": args.checkpoint_dir,
     "checkpoint_interval": args.checkpoint_interval,
 }
@@ -217,19 +215,6 @@ wandb.init(
     config=config,                       # Pass in your configuration
     # name="run-with-lr-0.01",             # Optional, for a descriptive run name
 )
-
-
-# ============================================================================
-# DATA LOADING
-# ============================================================================
-train_data = read_byte_file_to_memmap(
-  args.train_tokens_path, args.train_metadata_path)
-val_data = read_byte_file_to_memmap(
-  args.val_tokens_path, args.val_metadata_path)
-
-print("============================================================================")
-print(f"Train data shape: {train_data.shape}, dtype: {train_data.dtype}")
-print(f"Val data shape: {val_data.shape}, dtype: {val_data.dtype}")
 
 # ============================================================================
 # LOAD CHECKPOINT IF PROVIDED
@@ -256,7 +241,6 @@ if args.load_checkpoint:
   print(f"Optimizer loaded from checkpoint and instantiated:")
   print(optimizer)
 
-  
 # ============================================================================
 # INSTANTIATE THE MODEL
 # ============================================================================
@@ -303,15 +287,56 @@ scheduler = CosineLearningRateScheduler(
 )
 
 # ============================================================================
-# SETUP LOGGING AND CHECKPOINT DIRECTORIES
+# SETUP CHECKPOINT DIRECTORIES
 # ============================================================================
-log_file = None
-if args.log_dir:
-  os.makedirs(args.log_dir, exist_ok=True)
-  log_file = open(os.path.join(args.log_dir, "train.log"), "a")
-
 if args.checkpoint_dir:
   os.makedirs(args.checkpoint_dir, exist_ok=True)
+  
+# ============================================================================
+# DATA LOADING AND PREFETCHING SETUP
+# ============================================================================
+train_data = read_byte_file_to_memmap(
+  args.train_tokens_path, args.train_metadata_path)
+val_data = read_byte_file_to_memmap(
+  args.val_tokens_path, args.val_metadata_path)
+
+print("============================================================================")
+print(f"Train data shape: {train_data.shape}, dtype: {train_data.dtype}")
+print(f"Val data shape: {val_data.shape}, dtype: {val_data.dtype}")
+
+batch_size_mb = args.batch_size * context_length * 4 // 1024  # Approximate batch size in MB (assuming int32 tokens).
+prefetch_batches = args.pre_fetch_batches_mb // batch_size_mb
+print(f"Pre-fetching {prefetch_batches} batches ({args.pre_fetch_batches_mb} MB) for training.")
+
+train_batch_data = MemmapTokenDataset(
+  memmap_data=train_data,
+  batch_size=args.batch_size,
+  context_length=context_length,
+  device=args.device,
+  dtype=torch.int32,
+  prefetch_batches=prefetch_batches,
+)
+train_batch_data_loader = DataLoader(
+  train_batch_data,
+  batch_size=None,  # Batching handled by dataset
+  num_workers=0,    # Keep 0 for memmap to avoid multiprocessing issues.
+)
+train_batch_data_iterator = iter(train_batch_data_loader)
+
+val_batch_data = MemmapTokenDataset(
+  memmap_data=val_data,
+  batch_size=args.batch_size,
+  context_length=context_length,
+  device=args.device,
+  dtype=torch.int32,
+  prefetch_batches=10,  # Prefetch just a few batches for validation.
+)
+val_batch_data_loader = DataLoader(
+  val_batch_data,
+  batch_size=None,  # Batching handled by dataset.
+  num_workers=0,    # Keep 0 for memmap to avoid multiprocessing issues.
+)
+val_batch_data_iterator = iter(val_batch_data_loader)
 
 # ============================================================================
 # TRAINING LOOP
@@ -321,17 +346,10 @@ print("=========================================================================
 start_time = time.time()
 step_width = len(str(total_iterations))
 tokens_width = len(str(args.total_tokens))
-
 try:
   for iteration in range(start_iteration, total_iterations):
     iteration_start_time = time.time()
-    x, y = get_batch(
-      dataset=train_data,
-      batch_size=args.batch_size,
-      context_length=context_length,
-      device=args.device,
-      dtype=torch.int32,
-    )
+    x, y = next(train_batch_data_iterator)
     logits = model(x)
     train_loss = cross_entropy_loss(logits, y)
     optimizer.zero_grad()
@@ -352,13 +370,7 @@ try:
     val_loss = None
     if iteration % args.validation_interval == 0:
       with torch.no_grad():
-        val_x, val_y = get_batch(
-          dataset=val_data,
-          batch_size=args.batch_size,
-          context_length=context_length,
-          device=args.device,
-          dtype=torch.int32,
-        )
+        val_x, val_y = next(val_batch_data_iterator)
         val_logits = model(val_x)
         val_loss = cross_entropy_loss(val_logits, val_y).item()
       loss_message += f" | val_loss={val_loss:.4f}"
@@ -367,12 +379,8 @@ try:
     tokens_processed = iteration * args.batch_size * context_length
     loss_message = f"{loss_message} | lr={lr:.6f} | tokens processed={tokens_processed:>{tokens_width}}/{args.total_tokens}"
     print(loss_message)
-
-    # Log training loss to file and to Weights & Biases.
-    if args.log_dir:
-      log_file.write(loss_message + "\n")
-      log_file.flush()
     
+    # Log to Weights and Biases.
     wandb.log(
       {
         "train_loss": train_loss.item(),
@@ -395,7 +403,4 @@ except Exception as e:
     print(f"\nTraining failed with error: {e}")
     raise
 finally:
-    if log_file:
-        log_file.close()
     wandb.finish()
-    print("Cleanup completed.")

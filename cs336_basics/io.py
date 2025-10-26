@@ -1,12 +1,14 @@
 import json
 import os
 import re
-from typing import Iterator
+from typing import Iterator, Tuple
 import typing
 import torch
+from torch.utils.data import IterableDataset
 import pathlib
 import numpy as np
 import sys
+from cs336_basics.utils import get_batch
 
 
 ROOT_PATH = (pathlib.Path(__file__).resolve().parent.parent)
@@ -227,3 +229,39 @@ def _load_checkpoint(
   model.load_state_dict(checkpoint['model_state_dict'])
   optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
   return checkpoint['iteration']
+
+
+class MemmapTokenDataset(IterableDataset):
+  """Iterable dataset for memory-mapped token data with prefetching."""
+  
+  def __init__(
+    self, 
+    memmap_data: np.memmap, 
+    batch_size: int, 
+    context_length: int,
+    device: str,
+    dtype: torch.dtype = torch.int32,
+    prefetch_batches: int = 100
+  ):
+    self.data = memmap_data
+    self.batch_size = batch_size
+    self.context_length = context_length
+    self.device = device
+    self.dtype = dtype
+    self.prefetch_batches = prefetch_batches
+      
+  def __iter__(self) -> Iterator[Tuple[torch.Tensor, torch.Tensor]]:
+    """Generate batches indefinitely."""
+    while True:
+      # Prefetch self.prefetch_batches batches at once.
+      x_batches, y_batches = get_batch(
+        dataset=self.data,
+        batch_size=self.batch_size * self.prefetch_batches,
+        context_length=self.context_length,
+        device=self.device,
+        dtype=self.dtype,
+      )      
+      for i in range(self.prefetch_batches):
+        start = i * self.batch_size
+        end = start + self.batch_size
+        yield x_batches[start:end], y_batches[start:end]
