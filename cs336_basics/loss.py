@@ -1,3 +1,4 @@
+import math
 import torch
 from torch import Tensor
 from jaxtyping import Float, Int
@@ -19,3 +20,8 @@ def cross_entropy_loss(
     (inputs - max_inputs).exp().sum(dim=-1, keepdim=True).log() -
     target_inputs
   ).mean()
+
+
+def perplexity(loss: float) -> float:
+    """Convert cross-entropy loss to perplexity."""
+    return math.exp(loss)

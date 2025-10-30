@@ -65,7 +65,7 @@ from cs336_basics.optimizer import (
   CosineLearningRateScheduler,
   gradient_clipping,
 )
-from cs336_basics.loss import cross_entropy_loss
+from cs336_basics.loss import cross_entropy_loss, perplexity
 import time
 
 
@@ -358,6 +358,7 @@ try:
     x, y = next(train_batch_data_iterator)
     logits = model(x)
     train_loss = cross_entropy_loss(logits, y)
+    train_perplexity = perplexity(train_loss.item())
     optimizer.zero_grad()
     train_loss.backward()
 
@@ -371,17 +372,19 @@ try:
     iteration_duration = time.time() - iteration_start_time
     iteration_duration_str = time.strftime("%H:%M:%S", time.gmtime(iteration_duration))
     loss_message = (
-      f"[{current_time}] | total_duration={total_duration_str} | iteration_duration={iteration_duration_str} | step={iteration:>{step_width}}/{total_iterations} | train_loss={train_loss.item():.4f}"
+      f"[{current_time}] | total_duration={total_duration_str} | iteration_duration={iteration_duration_str} | step={iteration:>{step_width}}/{total_iterations} | train_loss={train_loss.item():.4f} | train_perplexity={train_perplexity:.4f}"
     )
     val_loss = None
+    val_perplexity = None
     if iteration % args.validation_interval == 0:
       with torch.no_grad():
         val_x, val_y = next(val_batch_data_iterator)
         val_logits = model(val_x)
         val_loss = cross_entropy_loss(val_logits, val_y).item()
-      loss_message += f" | val_loss={val_loss:.4f}"
+        val_perplexity = perplexity(val_loss)
+      loss_message += f" | val_loss={val_loss:.4f} | val_perplexity={val_perplexity:.4f}"
     else:
-      loss_message += " | val_loss=------"
+      loss_message += " | val_loss=------ | val_perplexity=------"
     tokens_processed = iteration * args.batch_size * context_length
     loss_message = f"{loss_message} | lr={lr:.6f} | tokens processed={tokens_processed:>{tokens_width}}/{args.total_tokens}"
     print(loss_message)
@@ -389,8 +392,10 @@ try:
     # Log to Weights and Biases.
     wandb.log(
       {
-        "train_loss": train_loss.item(),
-        "val_loss": val_loss,
+        "train/loss": train_loss.item(),
+        "train/perplexity": train_perplexity,
+        "val/loss": val_loss,
+        "val/perplexity": val_perplexity,
         "learning_rate": lr,
         "tokens_processed": tokens_processed,
         "iteration_duration": iteration_duration,
