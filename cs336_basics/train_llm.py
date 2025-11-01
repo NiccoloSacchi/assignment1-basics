@@ -21,7 +21,7 @@ Example usages for TinyStories dataset:
     --pre_fetch_batches_mb 4096 \
     --total_tokens 327680000 \
     --validation_interval 100 \
-    --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model \
+    --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/ \
     --checkpoint_interval 1000
     
   .venv/bin/python cs336_basics/train_llm.py \
@@ -185,39 +185,6 @@ parser.add_argument(
 args = parser.parse_args()
 
 # ============================================================================
-# Initialize Weights and Biases
-# ============================================================================
-# 1. Define your configuration (optional but recommended).
-config = {
-    "vocab_size": args.vocab_size,
-    "context_length": args.context_length,
-    "num_layers": args.num_layers,
-    "d_model": args.d_model,
-    "num_heads": args.num_heads,
-    "d_ff": args.d_ff,
-    "rope_theta": args.rope_theta,
-    "device": args.device,
-    "betas": args.betas,
-    "weight_decay": args.weight_decay,
-    "warmup_iters": args.warmup_iters,
-    "max_learning_rate": args.max_learning_rate,
-    "min_learning_rate": args.min_learning_rate,
-    "batch_size": args.batch_size,
-    "pre_fetch_batches_mb": args.pre_fetch_batches_mb,
-    "total_tokens": args.total_tokens,
-    "validation_interval": args.validation_interval,
-    "checkpoint_dir": args.checkpoint_dir,
-    "checkpoint_interval": args.checkpoint_interval,
-}
-
-# 2. Initialize a new run.
-wandb.init(
-    project="llm-project",  # Name of your W&B project
-    config=config,                       # Pass in your configuration
-    # name="run-with-lr-0.01",             # Optional, for a descriptive run name
-)
-
-# ============================================================================
 # LOAD CHECKPOINT IF PROVIDED
 # ============================================================================
 start_iteration = 0
@@ -266,7 +233,6 @@ summary(
   depth=10,
 )
 
-
 # ============================================================================
 # INSTANTIATE THE OPTIMIZER AND LEARNING RATE SCHEDULER
 # ============================================================================
@@ -291,12 +257,6 @@ scheduler = CosineLearningRateScheduler(
   warmup_iters=args.warmup_iters,
   cosine_cycle_iters=total_iterations,
 )
-
-# ============================================================================
-# SETUP CHECKPOINT DIRECTORIES
-# ============================================================================
-if args.checkpoint_dir:
-  os.makedirs(args.checkpoint_dir, exist_ok=True)
   
 # ============================================================================
 # DATA LOADING AND PREFETCHING SETUP
@@ -343,6 +303,48 @@ val_batch_data_loader = DataLoader(
   num_workers=0,    # Keep 0 for memmap to avoid multiprocessing issues.
 )
 val_batch_data_iterator = iter(val_batch_data_loader)
+
+# ============================================================================
+# Initialize Weights and Biases
+# ============================================================================
+# 1. Define your configuration (optional but recommended).
+config = {
+    "total_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
+    "vocab_size": args.vocab_size,
+    "context_length": args.context_length,
+    "num_layers": args.num_layers,
+    "d_model": args.d_model,
+    "num_heads": args.num_heads,
+    "d_ff": args.d_ff,
+    "rope_theta": args.rope_theta,
+    "device": args.device,
+    "betas": args.betas,
+    "weight_decay": args.weight_decay,
+    "warmup_iters": args.warmup_iters,
+    "max_learning_rate": args.max_learning_rate,
+    "min_learning_rate": args.min_learning_rate,
+    "batch_size": args.batch_size,
+    "pre_fetch_batches_mb": args.pre_fetch_batches_mb,
+    "total_tokens": args.total_tokens,
+    "validation_interval": args.validation_interval,
+    "checkpoint_dir": args.checkpoint_dir,
+    "checkpoint_interval": args.checkpoint_interval,
+}
+
+# 2. Initialize a new run.
+run = wandb.init(
+    project="llm-project",
+    config=config,
+    # name="llm-training-run",
+)
+
+# ============================================================================
+# SETUP CHECKPOINT DIRECTORIES
+# ============================================================================
+checkpoint_dir = None
+if args.checkpoint_dir:
+  checkpoint_dir = args.checkpoint_dir + "/" + run.name
+  os.makedirs(checkpoint_dir, exist_ok=True)
 
 # ============================================================================
 # TRAINING LOOP
@@ -404,8 +406,8 @@ try:
     )
 
     # Save checkpoint.
-    if args.checkpoint_dir and iteration != 0 and iteration % args.checkpoint_interval == 0:
-        checkpoint_path = os.path.join(args.checkpoint_dir, f"checkpoint_{iteration}.pt")
+    if checkpoint_dir and iteration != 0 and iteration % args.checkpoint_interval == 0:
+        checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{iteration}.pt")
         save_checkpoint(model, optimizer, iteration, checkpoint_path)
         print(f"Checkpoint saved at iteration {iteration}")
 except KeyboardInterrupt:
@@ -415,3 +417,6 @@ except Exception as e:
     raise
 finally:
     wandb.finish()
+    if checkpoint_dir and iteration != 0:
+        checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_{iteration}.pt")
+        save_checkpoint(model, optimizer, iteration, checkpoint_path)
