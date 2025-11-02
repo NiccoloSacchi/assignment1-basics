@@ -13,12 +13,12 @@ Example usages for TinyStories dataset:
     --rope_theta 10000 \
     --device mps \
     --betas 0.9 0.95 \
-    --weight_decay 0.1 \
-    --warmup_iters 1000 \
+    --weight_decay 0.01 \
+    --warmup_iters 100 \
     --max_learning_rate 1e-3 \
     --min_learning_rate 1e-5 \
-    --batch_size 16 \
-    --pre_fetch_batches_mb 4096 \
+    --batch_size 32 \
+    --pre_fetch_batches_mb 8192 \
     --total_tokens 327680000 \
     --validation_interval 100 \
     --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/ \
@@ -182,6 +182,11 @@ parser.add_argument(
   help='Optional. Path to checkpoint file to resume training from. If passed, the above model and optimizer hyperparameters are ignored.',
 )
 
+parser.add_argument(
+  '--wandb_project', type=str, default="llm-project", required=False,
+  help='Optional. WandB project name for logging.',
+)
+
 args = parser.parse_args()
 
 # ============================================================================
@@ -309,33 +314,32 @@ val_batch_data_iterator = iter(val_batch_data_loader)
 # ============================================================================
 # 1. Define your configuration (optional but recommended).
 config = {
-    "total_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
-    "vocab_size": args.vocab_size,
-    "context_length": args.context_length,
-    "num_layers": args.num_layers,
-    "d_model": args.d_model,
-    "num_heads": args.num_heads,
-    "d_ff": args.d_ff,
-    "rope_theta": args.rope_theta,
-    "device": args.device,
-    "betas": args.betas,
-    "weight_decay": args.weight_decay,
-    "warmup_iters": args.warmup_iters,
-    "max_learning_rate": args.max_learning_rate,
-    "min_learning_rate": args.min_learning_rate,
-    "batch_size": args.batch_size,
-    "pre_fetch_batches_mb": args.pre_fetch_batches_mb,
-    "total_tokens": args.total_tokens,
-    "validation_interval": args.validation_interval,
-    "checkpoint_dir": args.checkpoint_dir,
-    "checkpoint_interval": args.checkpoint_interval,
+  "total_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
+  "vocab_size": args.vocab_size,
+  "context_length": args.context_length,
+  "num_layers": args.num_layers,
+  "d_model": args.d_model,
+  "num_heads": args.num_heads,
+  "d_ff": args.d_ff,
+  "rope_theta": args.rope_theta,
+  "device": args.device,
+  "betas": args.betas,
+  "weight_decay": args.weight_decay,
+  "warmup_iters": args.warmup_iters,
+  "max_learning_rate": args.max_learning_rate,
+  "min_learning_rate": args.min_learning_rate,
+  "batch_size": args.batch_size,
+  "pre_fetch_batches_mb": args.pre_fetch_batches_mb,
+  "total_tokens": args.total_tokens,
+  "validation_interval": args.validation_interval,
+  "checkpoint_dir": args.checkpoint_dir,
+  "checkpoint_interval": args.checkpoint_interval,
 }
 
 # 2. Initialize a new run.
 run = wandb.init(
-    project="llm-project",
-    config=config,
-    # name="llm-training-run",
+  project=args.wandb_project,
+  config=config,
 )
 
 # ============================================================================
