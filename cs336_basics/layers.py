@@ -46,7 +46,7 @@ class Linear(nn.Module):
     self,
     x: Float[Tensor, " ... in_features"]
   ) -> Float[Tensor, " ... out_features"]:
-    return einsum(self.w, x, "out_features in_features, ... in_features -> ... out_features")    
+    return einsum(self.w, x, "out_features in_features, ... in_features -> ... out_features")
 
 
 class Embedding(nn.Module):

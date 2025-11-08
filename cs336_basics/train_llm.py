@@ -22,7 +22,9 @@ Example usages for TinyStories dataset:
     --total_tokens 327680000 \
     --validation_interval 100 \
     --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/TinyStories/ \
-    --checkpoint_interval 1000
+    --checkpoint_interval 1000 \
+    --wandb_project "TestGradientLogging" \
+    --gradients_and_parameters_logging_interval 50
     
   .venv/bin/python cs336_basics/train_llm.py \
     --train_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy \
@@ -164,7 +166,7 @@ parser.add_argument(
   help='Total number of tokens to process during training. total_iterations ~= total_tokens / (batch_size * context_length).',
 )
 parser.add_argument(
-  '--validation_interval', type=int, required=True,
+  '--validation_interval', type=int, default=float('inf'), required=False,
   help='Number of iterations between each validation.',
 )
 
@@ -182,9 +184,14 @@ parser.add_argument(
   help='Optional. Path to checkpoint file to resume training from. If passed, the above model and optimizer hyperparameters are ignored.',
 )
 
+# Logging.
 parser.add_argument(
   '--wandb_project', type=str, default="llm-project", required=False,
   help='Optional. WandB project name for logging.',
+)
+parser.add_argument(
+  '--gradients_and_parameters_logging_interval', type=int, default=-1, required=False,
+  help='Optional. Interval (in iterations) to log gradients and parameters values.',
 )
 
 args = parser.parse_args()
@@ -336,11 +343,14 @@ config = {
   "checkpoint_interval": args.checkpoint_interval,
 }
 
+print("============================================================================")
 # 2. Initialize a new run.
 run = wandb.init(
   project=args.wandb_project,
   config=config,
 )
+if args.gradients_and_parameters_logging_interval > 0:
+  wandb.watch(model, log='all', log_freq=args.gradients_and_parameters_logging_interval)
 
 # ============================================================================
 # SETUP CHECKPOINT DIRECTORIES
