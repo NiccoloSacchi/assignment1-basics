@@ -40,7 +40,7 @@ def compression_ratio(tokenizer: Tokenizer, text: str) -> float:
   return num_bytes/num_tokens if num_tokens > 0 else float('inf')
 
 def get_batch(
-    dataset: np.typing.NDArray,
+    dataset: np.ndarray | np.memmap,
     batch_size: int,
     context_length: int,
     device: str,
@@ -68,8 +68,8 @@ def get_batch(
     assert context_length < len(dataset), "Context length must be less than dataset length."
     
     # Sample random starting indices.
-    indices = np.random.choice(len(dataset) - context_length, batch_size, replace=False)
-    
+    indices = np.random.choice(len(dataset) - context_length, batch_size, replace=True)  # Ideally use replace=False, but it is much slower for large datasets.
+
     # Create input sequences (x) and target sequences (y, shifted by 1).
     x_np = np.empty((batch_size, context_length), dtype=dataset.dtype)
     y_np = np.empty((batch_size, context_length), dtype=dataset.dtype)

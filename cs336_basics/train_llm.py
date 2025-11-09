@@ -1,6 +1,7 @@
 """Train an LLM on the given dataset and with the specified configuration.
 
-Example usages for TinyStories dataset:
+Example usages:
+- Train on TinyStories:
   .venv/bin/python cs336_basics/train_llm.py \
     --train_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy \
     --val_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-valid-tokens.npy \
@@ -25,7 +26,8 @@ Example usages for TinyStories dataset:
     --checkpoint_interval 1000 \
     --wandb_project "TestGradientLogging" \
     --gradients_and_parameters_logging_interval 50
-    
+
+- Resume training from a checkpoint:
   .venv/bin/python cs336_basics/train_llm.py \
     --train_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy \
     --val_tokens_path /Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-valid-tokens.npy \
@@ -40,13 +42,33 @@ Example usages for TinyStories dataset:
     --checkpoint_interval 100 \
     --load_checkpoint /Users/niccolosacchi/assignment1-basics/model/TinyStories/small_model/checkpoint_10.pt
   
-Example usage for OpenWebText dataset:
+- Train on OpenWebText:
   .venv/bin/python cs336_basics/train_llm.py \
     --train_tokens_path /Users/niccolosacchi/assignment1-basics/data/owt_train_tokens.bin \
     --train_metadata_path /Users/niccolosacchi/assignment1-basics/data/owt_train_tokens_metadata.json \
     --val_tokens_path /Users/niccolosacchi/assignment1-basics/data/owt_valid_tokens.bin \
     --val_metadata_path /Users/niccolosacchi/assignment1-basics/data/owt_valid_tokens_metadata.json \
-    ...
+    --vocab_size 10000 \
+    --context_length 256 \
+    --num_layers 4 \
+    --d_model 512 \
+    --num_heads 16 \
+    --d_ff 1344 \
+    --rope_theta 10000 \
+    --device mps \
+    --betas 0.9 0.95 \
+    --weight_decay 0.01 \
+    --warmup_iters 100 \
+    --max_learning_rate 1e-3 \
+    --min_learning_rate 1e-5 \
+    --batch_size 32 \
+    --pre_fetch_batches_mb 8192 \
+    --total_tokens 327680000 \
+    --validation_interval 100 \
+    --checkpoint_dir /Users/niccolosacchi/assignment1-basics/model/OWT-test/ \
+    --checkpoint_interval 1000 \
+    --wandb_project "test" \
+    --gradients_and_parameters_logging_interval 50
 """
 
 import wandb
@@ -284,7 +306,7 @@ print(f"Val data shape: {val_data.shape}, dtype: {val_data.dtype}")
 
 batch_size_mb = args.batch_size * context_length * 4 // 1024  # Approximate batch size in MB (assuming int32 tokens).
 prefetch_batches = args.pre_fetch_batches_mb // batch_size_mb
-print(f"Pre-fetching {prefetch_batches} batches ({args.pre_fetch_batches_mb} MB) for training.")
+print(f"Pre-fetching {prefetch_batches} batches ({args.pre_fetch_batches_mb} MB) during training.")
 
 train_batch_data = MemmapTokenDataset(
   memmap_data=train_data,
