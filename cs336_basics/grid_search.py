@@ -28,12 +28,17 @@ def main():
   # Define base arguments. The model will be trained with these args and then 
   # overwritten by grid search parameters.
   base_args = {
-    "train_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy",
-    "val_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-valid-tokens.npy",
-    "vocab_size": 10000,
+    # "train_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-train-tokens.npy",
+    # "val_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/TinyStoriesV2-GPT4-valid-tokens.npy",
+    # "vocab_size": 10000,
+    "train_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/owt_train_tokens.bin",
+    "train_metadata_path": "/Users/niccolosacchi/assignment1-basics/data/owt_train_tokens_metadata.json",
+    "val_tokens_path": "/Users/niccolosacchi/assignment1-basics/data/owt_valid_tokens.bin",
+    "val_metadata_path": "/Users/niccolosacchi/assignment1-basics/data/owt_valid_tokens_metadata.json",
+    "vocab_size": 32000,
     "context_length": 256,
-    "num_layers": 4,
-    "d_model": 512,
+    "num_layers": 8,
+    "d_model": 768,
     "num_heads": 16,
     "d_ff": 1344,
     "rope_theta": 10000,
@@ -41,26 +46,27 @@ def main():
     "betas": [0.9, 0.95],
     "weight_decay": 0.01,
     "warmup_iters": 100,
-    "max_learning_rate": 1e-4,
+    "max_learning_rate": 1e-3,
     "min_learning_rate": 1e-5,
     "batch_size": 32,
     "pre_fetch_batches_mb": 8192,
-    "total_tokens": 15_000_000, # 327_680_000
+    "total_tokens": 20_000_000, # 327_680_000
     "validation_interval": 100,
     "checkpoint_dir": "/Users/niccolosacchi/assignment1-basics/model/TinyStories",
     "checkpoint_interval": 1000,
-    "wandb_project": "llm-simple-grid-search",
+    "wandb_project": "llm-owt-simple-grid-search",
+    "gradients_and_parameters_logging_interval": 100,
   }
   
   # Define grid search parameters. We will not try all combinations, but just
   # vary one grid_params per time to overwrite the base args.
   grid_params = {
-    "context_length": [512],
-    "d_model": [768],
-    "batch_size": [16, 64],
-    "num_layers": [8],
-    "max_learning_rate": [1e-3],
-    "weight_decay": [0.1],
+    # "context_length": [512],
+    # "d_model": [768],
+    # "batch_size": [16, 64],
+    # "num_layers": [8],
+    "max_learning_rate": [1e-1, 1e-2, 1e-4],
+    # "weight_decay": [0.1],
   }
 
   # Count total runs.
