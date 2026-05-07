@@ -1,4 +1,5 @@
 import torch
+from torch.utils.checkpoint import checkpoint
 from torch import nn, Tensor
 from jaxtyping import Float, Int
 from cs336_basics.layers import (
