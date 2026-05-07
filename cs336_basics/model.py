@@ -22,6 +22,7 @@ class TransformerLM(nn.Module):
         rms_norm_eps: float = 1e-5,
         device: torch.device = torch.device("cpu"),
         dtype: torch.dtype = torch.float32,
+        num_checkpoints: int = 0,
     ):
         """
         Args:
@@ -39,8 +40,13 @@ class TransformerLM(nn.Module):
           rms_norm_eps: Epsilon value for numerical stability in RMSNorm.
           device: Device to store the parameters on.
           dtype: Data type of the parameters.
+          num_checkpoints: number of checkpoints for the num_layers. Defaults to
+            0, meaning no checkpointing is done.
         """
         super().__init__()
+        assert (
+            num_layers >= num_checkpoints
+        ), "You cannot have more checkpoints than TransformerBlock layers."
 
         # Used to save and load how the model.
         self._init_args = {
@@ -54,7 +60,9 @@ class TransformerLM(nn.Module):
             "rms_norm_eps": rms_norm_eps,
             "device": device,
             "dtype": dtype,
+            "num_checkpoints": num_checkpoints,
         }
+        self.num_checkpoints = num_checkpoints
         self.token_embeddings = Embedding(vocab_size, d_model, device, dtype)
         self.transformer_blocks = nn.ModuleList(
             [
@@ -90,8 +98,25 @@ class TransformerLM(nn.Module):
             the logits for each token in the vocabulary.
         """
         x = self.token_embeddings(input_ids)  # (..., context_length, d_model)
-        for block in self.transformer_blocks:
-            x = block(x)  # (..., context_length, d_model)
+        if self.num_checkpoints > 0:
+            layers_per_checkpoint = self.num_layers // self.num_checkpoints
+            for i in range(0, self.num_layers, layers_per_checkpoint):
+                segment = self.transformer_blocks[i : i + layers_per_checkpoint]
+
+                def run_segment(start_x, layers=segment):
+                    for layer in layers:
+                        start_x = layer(start_x)
+                    return start_x
+
+                # use_reentrant=False is recommended for torch.compile compatibility.
+                x = checkpoint(
+                    run_segment, x, use_reentrant=False
+                )  # (..., context_length, d_model)
+        else:
+            # Standard execution
+            for block in self.transformer_blocks:
+                x = block(x)  # (..., context_length, d_model)
+
         x = self.rms(x)  # (..., context_length, d_model)
         logits = self.linear(x)  # (..., context_length, vocab_size)
         return logits  # (..., context_length, vocab_size)
