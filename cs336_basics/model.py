@@ -62,7 +62,9 @@ class TransformerLM(nn.Module):
             "dtype": dtype,
             "num_checkpoints": num_checkpoints,
         }
+        self.num_layers = num_layers
         self.num_checkpoints = num_checkpoints
+
         self.token_embeddings = Embedding(vocab_size, d_model, device, dtype)
         self.transformer_blocks = nn.ModuleList(
             [
