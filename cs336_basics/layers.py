@@ -31,7 +31,7 @@ class Linear(nn.Module):
         # stores multi-dimensional arrays in row-major order and when multiplying
         # the input with w we need read the in_features.
         std = (2 / (in_features + out_features)) ** 0.5
-        self.w = nn.Parameter(
+        self.weight = nn.Parameter(
             torch.nn.init.trunc_normal_(
                 torch.empty((out_features, in_features), device=device, dtype=dtype),
                 mean=0,
@@ -45,7 +45,9 @@ class Linear(nn.Module):
         self, x: Float[Tensor, " ... in_features"]
     ) -> Float[Tensor, " ... out_features"]:
         return einsum(
-            self.w, x, "out_features in_features, ... in_features -> ... out_features"
+            self.weight,
+            x,
+            "out_features in_features, ... in_features -> ... out_features",
         )
 
 
