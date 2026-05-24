@@ -69,7 +69,7 @@ class Embedding(nn.Module):
         super().__init__()
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        self.embeddings = nn.Parameter(
+        self.weight = nn.Parameter(
             torch.nn.init.trunc_normal_(
                 torch.empty(num_embeddings, embedding_dim, device=device, dtype=dtype),
                 mean=0,
@@ -80,7 +80,7 @@ class Embedding(nn.Module):
         )
 
     def forward(self, token_ids: torch.LongTensor) -> torch.Tensor:
-        return self.embeddings[token_ids]
+        return self.weight[token_ids]
 
 
 class RMSNorm(nn.Module):
